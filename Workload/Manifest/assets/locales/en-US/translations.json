@@ -15,5 +15,8 @@
     "HelloWorld_GetStarted_3_Sub_Title": "SubTitle3",
     "HelloWorld_GetStarted_1_Description": "Card1 description",
     "HelloWorld_GetStarted_2_Description": "Card2 description",
-    "HelloWorld_GetStarted_3_Description": "Card3 description"
+    "HelloWorld_GetStarted_3_Description": "Card3 description",
+    "ExcelEditItem_DisplayName": "Excel Editor",
+    "ExcelEditItem_DisplayName_Plural": "Excel Editors",
+    "ExcelEditItem_Description": "Advanced Excel editing and data manipulation with Lakehouse integration"
 }

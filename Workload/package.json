@@ -16,6 +16,7 @@
     "@fluentui/react": "^8.110.7",
     "@fluentui/react-components": "^9.7.2",
     "@fluentui/react-icons": "2.0.226",
+    "@microsoft/connected-workbooks": "^3.4.0-beta",
     "@ms-fabric/workload-client": "^3.0.0",
     "@reduxjs/toolkit": "^2.6.0",
     "history": "^4.9.0",

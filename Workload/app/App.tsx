@@ -9,6 +9,7 @@ import CustomAbout from "./items/HelloWorldItem/HelloWorldItemEditorAboutPage";
 import { SamplePage, ClientSDKPlayground } from "./playground/ClientSDKPlayground/ClientSDKPlayground";
 import { DataPlayground } from "./playground/DataPlayground/DataPlayground";
 import { HelloWorldItemEditor} from "./items/HelloWorldItem/HelloWorldItemEditor";
+import { ExcelEditItemEditor} from "./items/ExcelEditItem/ExcelEditItemEditor";
 
 /*
     Add your Item Editor in the Route section of the App function below
@@ -52,6 +53,12 @@ export function App({ history, workloadClient }: AppProps) {
             <Route path="/HelloWorldItem-editor/:itemObjectId">
                 <HelloWorldItemEditor
                     workloadClient={workloadClient} data-testid="HelloWorldItem-editor" />
+            </Route>
+            
+            {/* Routings for the Excel Edit Item Editor */}
+            <Route path="/ExcelEditItem-editor/:itemObjectId">
+                <ExcelEditItemEditor
+                    workloadClient={workloadClient} data-testid="ExcelEditItem-editor" />
             </Route>
             
             <Route path="/HelloWorldItem-settings-page">

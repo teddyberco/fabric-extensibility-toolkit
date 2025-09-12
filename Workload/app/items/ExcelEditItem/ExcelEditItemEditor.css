@@ -1,0 +1,168 @@
+/* Excel Edit Item Styles */
+.excel-edit-container {
+  padding: 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.workflow-card {
+  margin-bottom: 1rem;
+}
+
+.card-content {
+  padding: 1rem;
+}
+
+.selectable-card {
+  cursor: pointer;
+  margin-bottom: 0.5rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.selectable-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.workflow-step-content {
+  text-align: center;
+  padding: 2rem;
+}
+
+.workflow-step-icon {
+  font-size: 3rem;
+  color: #0078d4;
+  margin-bottom: 1rem;
+}
+
+.workflow-step-title {
+  margin-bottom: 1rem;
+}
+
+.workflow-step-description {
+  margin-bottom: 2rem;
+  color: #666;
+}
+
+.selectable-card-content {
+  padding: 1rem;
+}
+
+.table-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.table-card-info {
+  color: #666;
+}
+
+.loading-step-content {
+  text-align: center;
+  padding: 2rem;
+}
+
+.loading-step-text {
+  margin-top: 1rem;
+}
+
+.excel-editing-placeholder {
+  border: 2px dashed #0078d4;
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  margin: 1rem 0;
+  background-color: #f8f9fa;
+}
+
+.excel-editing-title {
+  margin-bottom: 0.5rem;
+}
+
+.excel-editing-description {
+  color: #666;
+  margin-bottom: 1rem;
+}
+
+.excel-editing-table-info {
+  color: #666;
+}
+
+.excel-editing-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.save-options {
+  margin-top: 1rem;
+}
+
+.saving-step-content {
+  text-align: center;
+  padding: 2rem;
+}
+
+.completion-step-content {
+  text-align: center;
+  padding: 2rem;
+}
+
+.completion-step-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.completion-step-title {
+  margin-bottom: 1rem;
+}
+
+.completion-step-description {
+  margin-bottom: 2rem;
+  color: #666;
+}
+
+.completion-step-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.progress-indicator {
+  margin-bottom: 2rem;
+}
+
+.progress-steps {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.progress-chevron {
+  transform: rotate(-90deg);
+}
+
+.error-message {
+  margin-bottom: 1rem;
+}
+
+.error-icon {
+  margin-right: 0.5rem;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.overview-item-title {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.overview-item-description {
+  color: #666;
+}

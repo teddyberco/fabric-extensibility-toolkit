@@ -36,7 +36,8 @@
         "customActions": [
         ]},
         "recommendedItemTypes": [
-          "HelloWorld"
+          "HelloWorld",
+          "ExcelEdit"
         ]
     },
     "createExperience": {
@@ -58,6 +59,27 @@
             "workspace-plus-new-teams"
           ],
           "itemType": "HelloWorld",
+          "createItemDialogConfig": {
+            "onCreationFailure": { "action": "item.onCreationFailure" },
+            "onCreationSuccess": { "action": "item.onCreationSuccess" }
+          }
+        },
+        {
+          "title": "ExcelEditItem_DisplayName",
+          "description": "ExcelEditItem_Description",
+          "icon": {
+            "name": "assets/images/ExcelEditItem-icon.png"
+          },
+          "icon_small": {
+            "name": "assets/images/ExcelEditItem-icon.png"
+          },
+          "availableIn": [
+            "home",
+            "create-hub",
+            "workspace-plus-new",
+            "workspace-plus-new-teams"
+          ],
+          "itemType": "ExcelEdit",
           "createItemDialogConfig": {
             "onCreationFailure": { "action": "item.onCreationFailure" },
             "onCreationSuccess": { "action": "item.onCreationSuccess" }
