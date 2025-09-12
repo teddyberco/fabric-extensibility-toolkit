@@ -14,6 +14,23 @@ This file contains **GitHub Copilot-specific** instructions that extend the gene
   - Item Operations: `.ai/commands/item/` (createItem.md, deleteItem.md)
   - Workload Operations: `.ai/commands/workload/` (runWorkload.md, updateWorkload.md, deployWorkload.md, publishworkload.md)
 
+## ⚠️ Critical Working Directory Requirements
+
+**MANDATORY**: All Node.js/npm commands MUST be executed from the `Workload` directory:
+
+```powershell
+# ✅ CORRECT - Always navigate to Workload directory first
+cd Workload
+npm start
+npm install
+npm run build
+
+# ❌ INCORRECT - Will fail with "package.json not found"
+npm start  # (when in root directory)
+```
+
+**Technical Reason**: The `package.json`, `tsconfig.json`, and all Node.js configurations are located in the `Workload/` subdirectory, not the repository root.
+
 ## 🤖 GitHub Copilot Enhanced Features
 
 ### Agent Activation
@@ -85,6 +102,13 @@ Instead of manual file creation, GitHub Copilot can generate complete structures
 GitHub Copilot understands context-aware shortcuts:
 
 ```powershell
+# IMPORTANT: Always use absolute path or compound command for npm operations
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm start    # ✅ Reliable startup
+
+# Alternative compound commands that work:
+cd Workload && npm install     # ✅ Dependencies installation
+cd Workload && npm run build   # ✅ Production build
+
 # Smart environment detection with .env-based configuration
 fabric dev start    # Automatically uses .env.dev configuration
 

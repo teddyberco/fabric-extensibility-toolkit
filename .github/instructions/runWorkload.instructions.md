@@ -6,6 +6,24 @@
 
 This file provides GitHub Copilot-specific enhancements for running workloads beyond the base generic process.
 
+## ⚠️ Critical Working Directory Requirements
+
+**IMPORTANT**: All `npm` commands MUST be run from the `Workload` directory, not the root repository directory.
+
+```powershell
+# ✅ CORRECT - Always navigate to Workload directory first
+cd Workload
+npm start
+
+# ❌ INCORRECT - Will fail with "package.json not found"
+npm start  # (when in root directory)
+```
+
+**Why this matters:**
+- The `package.json` file is located in `Workload/`, not the root
+- All Node.js dependencies and scripts are configured relative to `Workload/`
+- Build tools and webpack configuration expect this working directory
+
 ## 🤖 GitHub Copilot Enhanced Features
 
 ### Smart Environment Detection
@@ -238,9 +256,12 @@ npm run start:devServer
 
 #### Option B: Start DevServer Only (if DevGateway already running)
 ```powershell
+# IMPORTANT: Always navigate to Workload directory first
 cd Workload
 npm start
 ```
+
+**⚠️ Critical Directory Note**: Always ensure you are in the `Workload` directory before running `npm start`. The package.json file is located there, not in the root directory.
 
 ## Usage
 
@@ -310,7 +331,7 @@ When starting a workload, follow this checklist:
 **Solutions:**
 - Kill existing Node.js processes: `taskkill /f /im node.exe` (Windows)
 - Change port in webpack configuration
-- Use different port: `npm start -- --port 3001`
+- Use different port: `cd Workload && npm start -- --port 3001` (ensure you're in Workload directory)
 
 #### Issue: Manifest Package Not Found
 **Symptoms:** DevGateway can't find manifest package

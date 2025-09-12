@@ -3,6 +3,7 @@ const baseConfig = require('../webpack.config.js');
 const express = require("express");
 const Webpack = require("webpack");
 const { registerDevServerApis } = require('.'); // Import our manifest API
+const { WOPIHostEndpoints } = require('./wopiHost'); // Import WOPI Host
 
 
 // making sure the dev configuration is set correctly!
@@ -67,6 +68,11 @@ module.exports = merge(baseConfig, {
             
             // Register the manifest API from our extracted implementation
             registerDevServerApis(devServer.app);
+            
+            // Initialize WOPI Host endpoints for Excel Online integration
+            console.log('*** Mounting WOPI Host API ***');
+            const wopiHost = new WOPIHostEndpoints();
+            wopiHost.initializeEndpoints(devServer.app);
 
             return middlewares;
         },
