@@ -8,9 +8,6 @@ import {
   MessageBarBody,
   Spinner,
   Badge,
-  Field,
-  Dropdown,
-  Option,
 } from "@fluentui/react-components";
 import {
   ChevronDown20Regular,
@@ -43,18 +40,14 @@ interface TableInfo {
   rowCount: number;
 }
 
-interface OneLakeFolder {
-  path: string;
-  name: string;
-  type: 'folder' | 'file';
-}
-
 // Workflow states for the Excel editing experience
 enum WorkflowState {
   INITIAL = 'initial',
   SELECTING_TABLE = 'selecting_table',
   LOADING_DATA = 'loading_data',
   EXCEL_EDITING = 'excel_editing',
+  CHOOSING_SAVE_DESTINATION = 'choosing_save_destination',
+  SAVING_TO_LAKEHOUSE = 'saving_to_lakehouse',
   SAVING_TO_ONELAKE = 'saving_to_onelake',
   COMPLETED = 'completed'
 }
@@ -85,8 +78,6 @@ export function ExcelEditItemEditorDefault({
   
   // Excel and OneLake state
   const [excelData, setExcelData] = useState<any[][]>([]);
-  const [oneLakeFolders, setOneLakeFolders] = useState<OneLakeFolder[]>([]);
-  const [selectedSaveFolder, setSelectedSaveFolder] = useState<string>('');
   
   // WOPI Host state
   const [excelFileId, setExcelFileId] = useState<string>('');
@@ -109,6 +100,31 @@ export function ExcelEditItemEditorDefault({
       }
     }
   }, [item]);
+
+  // Check for pre-selected lakehouse from empty state on component mount
+  useEffect(() => {
+    const checkStoredLakehouse = async () => {
+      try {
+        const storedLakehouse = localStorage.getItem('selectedLakehouse');
+        if (storedLakehouse) {
+          const lakehouseInfo = JSON.parse(storedLakehouse);
+          console.log('✅ Found pre-selected lakehouse:', lakehouseInfo);
+          
+          // Clear the stored data since we're using it
+          localStorage.removeItem('selectedLakehouse');
+          
+          // Set the lakehouse and proceed directly to table loading
+          setSelectedLakehouse(lakehouseInfo);
+          await selectLakehouse(lakehouseInfo);
+        }
+      } catch (err) {
+        console.error('Error checking stored lakehouse:', err);
+        // If there's an error, just proceed normally
+      }
+    };
+    
+    checkStoredLakehouse();
+  }, []);
 
   // Step 1: Load available lakehouses using DataHub API
   const loadLakehouses = async () => {
@@ -249,20 +265,24 @@ export function ExcelEditItemEditorDefault({
     }
   };
 
-  // Step 5: Save edited data back to OneLake
-  const saveToOneLake = async (editedData: any[][]) => {
+  // Step 5a: Save edited data back to the original lakehouse table
+  const saveToLakehouse = async (editedData: any[][]) => {
     setIsLoading(true);
-    setCurrentState(WorkflowState.SAVING_TO_ONELAKE);
+    setCurrentState(WorkflowState.SAVING_TO_LAKEHOUSE);
     
     try {
-      // In real implementation, this would use OneLake APIs to save the data
-      // workloadClient.onelake.saveFile(selectedSaveFolder, filename, editedData)
+      console.log('Saving edited data back to lakehouse table:', selectedTable?.name);
       
-      console.log('Saving edited data to OneLake:', editedData);
+      // In real implementation, this would use Spark or SQL to update the original table
+      // Example approaches:
+      // 1. workloadClient.spark.updateTable(selectedLakehouse.id, selectedTable.name, editedData)
+      // 2. workloadClient.sql.executeUpdate(`UPDATE ${selectedTable.name} SET ... WHERE ...`)
+      // 3. Use Delta Lake format for versioned updates
       
-      // Mock save process
+      // For now, simulate the save process
       await new Promise(resolve => setTimeout(resolve, 2000));
       
+      console.log('✅ Successfully updated lakehouse table');
       setCurrentState(WorkflowState.COMPLETED);
       
       // Save the workflow state to item definition
@@ -270,32 +290,56 @@ export function ExcelEditItemEditorDefault({
         state: {
           lakehouseId: selectedLakehouse!.id,
           tableId: selectedTable!.name,
-          lastSavedPath: selectedSaveFolder,
+          lastSavedTo: 'lakehouse',
           lastEditedDate: new Date().toISOString()
         }
       });
       
     } catch (err) {
-      setError('Failed to save data to OneLake.');
-      console.error('OneLake save error:', err);
+      setError('Failed to save data to lakehouse table.');
+      console.error('Lakehouse save error:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Step 6: Load OneLake folders for save destination
-  const loadOneLakeFolders = async () => {
+  // Step 5b: Save edited data to item's OneLake folder
+  const saveToItemOneLake = async (editedData: any[][]) => {
+    setIsLoading(true);
+    setCurrentState(WorkflowState.SAVING_TO_ONELAKE);
+    
     try {
-      // In real implementation: workloadClient.onelake.getFolders()
-      const mockFolders: OneLakeFolder[] = [
-        { path: '/MyWorkspace/Data', name: 'Data', type: 'folder' },
-        { path: '/MyWorkspace/Reports', name: 'Reports', type: 'folder' },
-        { path: '/MyWorkspace/Analysis', name: 'Analysis', type: 'folder' },
-      ];
+      console.log('Saving edited data to item OneLake folder');
       
-      setOneLakeFolders(mockFolders);
+      // Create folder structure: /Items/{itemId}/Tables/{tableName}/
+      const itemTablePath = `/Items/${item!.id}/Tables/${selectedTable!.name}`;
+      const fileName = `${selectedTable!.name}_edited_${new Date().toISOString().split('T')[0]}.parquet`;
+      
+      // In real implementation, this would use OneLake APIs to save to item-specific folder
+      // workloadClient.onelake.saveFile(itemTablePath, fileName, editedData, 'parquet')
+      
+      // Mock save process
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      console.log(`✅ Successfully saved to item OneLake: ${itemTablePath}/${fileName}`);
+      setCurrentState(WorkflowState.COMPLETED);
+      
+      // Save the workflow state to item definition
+      await saveItemDefinition(workloadClient, item!.id, {
+        state: {
+          lakehouseId: selectedLakehouse!.id,
+          tableId: selectedTable!.name,
+          lastSavedTo: 'item-onelake',
+          lastSavedPath: `${itemTablePath}/${fileName}`,
+          lastEditedDate: new Date().toISOString()
+        }
+      });
+      
     } catch (err) {
-      console.error('Failed to load OneLake folders:', err);
+      setError('Failed to save data to item OneLake folder.');
+      console.error('Item OneLake save error:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -343,50 +387,98 @@ export function ExcelEditItemEditorDefault({
     switch (currentState) {
       case WorkflowState.INITIAL:
         return (
-          <Card className="workflow-card">
-            <div className="workflow-step-content">
-              <CloudDatabase20Regular className="workflow-step-icon" />
-              <Text size={600} block className="workflow-step-title">
-                Excel Lakehouse Editor
-              </Text>
-              <Text block className="workflow-step-description">
-                Connect to your Fabric Lakehouse, edit data in Excel, and save back to OneLake - all without leaving Fabric.
-              </Text>
-              <Button 
-                appearance="primary" 
-                size="large"
-                icon={<DatabaseSearch20Regular />}
-                onClick={loadLakehouses}
-                disabled={isLoading}
-              >
-                {isLoading ? 'Loading...' : 'Start with Lakehouse'}
-              </Button>
+          <Card>
+            <CardHeader
+              header={<Text weight="semibold">Excel Lakehouse Editor</Text>}
+              description={<Text>Connect to your Fabric Lakehouse to edit data with Excel</Text>}
+            />
+            <div style={{ padding: '1rem' }}>
+              {/* Step 1: Lakehouse Selection */}
+              <div style={{ marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                  <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#0078d4', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 'bold' }}>1</div>
+                  <Text weight="semibold" size={400}>Select Your Lakehouse</Text>
+                </div>
+                
+                <div style={{ padding: '1.5rem', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '1px solid #e1e1e1' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                    <CloudDatabase20Regular style={{ fontSize: '2rem', color: '#0078d4' }} />
+                    <div>
+                      <Text weight="semibold" block>Choose a Lakehouse</Text>
+                      <Text size={200} style={{ color: '#666' }}>
+                        Select the lakehouse containing the data you want to edit
+                      </Text>
+                    </div>
+                  </div>
+                  
+                  <Button 
+                    appearance="primary" 
+                    icon={<DatabaseSearch20Regular />}
+                    onClick={loadLakehouses}
+                    disabled={isLoading}
+                    style={{ width: '100%' }}
+                  >
+                    {isLoading ? 'Opening DataHub...' : 'Browse Lakehouses'}
+                  </Button>
+                  
+                  {isLoading && (
+                    <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+                      <Text size={200} style={{ color: '#666' }}>
+                        Opening Fabric DataHub for lakehouse selection...
+                      </Text>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Preview of Next Steps */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                <div style={{ padding: '1rem', backgroundColor: '#f3f2f1', borderRadius: '8px', opacity: '0.6' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#d1d1d1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>2</div>
+                    <Text size={300} style={{ color: '#666' }}>Select Table</Text>
+                  </div>
+                  <Text size={200} style={{ color: '#888' }}>Choose which table to edit</Text>
+                </div>
+                
+                <div style={{ padding: '1rem', backgroundColor: '#f3f2f1', borderRadius: '8px', opacity: '0.6' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#d1d1d1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>3</div>
+                    <Text size={300} style={{ color: '#666' }}>Edit in Excel</Text>
+                  </div>
+                  <Text size={200} style={{ color: '#888' }}>Use Excel Online interface</Text>
+                </div>
+                
+                <div style={{ padding: '1rem', backgroundColor: '#f3f2f1', borderRadius: '8px', opacity: '0.6' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#d1d1d1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>4</div>
+                    <Text size={300} style={{ color: '#666' }}>Save to OneLake</Text>
+                  </div>
+                  <Text size={200} style={{ color: '#888' }}>Store back to lakehouse</Text>
+                </div>
+              </div>
             </div>
           </Card>
         );
 
       case WorkflowState.SELECTING_TABLE:
         return (
-          <Card className="workflow-card">
+          <Card>
             <CardHeader
               header={<Text weight="semibold">Step 2: Select Table</Text>}
               description={<Text>Choose a table from {selectedLakehouse?.name}</Text>}
             />
-            <div className="card-content">
+            <div style={{ padding: '1rem' }}>
               {availableTables.map((table) => (
                 <Card 
                   key={table.name} 
-                  className="selectable-card"
-                  onClick={() => selectTableAndLoadData(table)}
                   style={{ cursor: 'pointer', marginBottom: '0.5rem' }}
+                  onClick={() => selectTableAndLoadData(table)}
                 >
                   <div style={{ padding: '1rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <Text weight="semibold" block>{table.displayName}</Text>
-                        <Text size={200} style={{ color: '#666' }}>
-                          {table.schema.length} columns • {table.rowCount.toLocaleString()} rows
-                        </Text>
                       </div>
                       <TableSimple20Regular style={{ color: '#0078d4' }} />
                     </div>
@@ -399,26 +491,28 @@ export function ExcelEditItemEditorDefault({
 
       case WorkflowState.LOADING_DATA:
         return (
-          <Card className="workflow-card">
-            <div className="card-content" style={{ textAlign: 'center', padding: '2rem' }}>
-              <Spinner size="large" />
-              <Text block style={{ marginTop: '1rem' }}>
-                Loading data from {selectedTable?.displayName}...
-              </Text>
-            </div>
-          </Card>
+          <div className="workflow-container">
+            <Card>
+              <div style={{ padding: '1rem' }}>
+                <Spinner size="large" />
+                <Text block style={{ marginTop: '1rem', fontSize: '18px' }}>
+                  Loading data from {selectedTable?.displayName}...
+                </Text>
+              </div>
+            </Card>
+          </div>
         );
 
       case WorkflowState.EXCEL_EDITING:
         if (excelOnlineUrl) {
           // Show Excel Online iframe
           return (
-            <Card className="workflow-card">
+            <Card>
               <CardHeader
                 header={<Text weight="semibold">Step 3: Excel Online Editing</Text>}
                 description={<Text>Edit your data using Excel Online (WOPI Host integration)</Text>}
               />
-              <div className="card-content">
+              <div style={{ padding: '1rem' }}>
                 {!excelOnlineUrl ? (
                   <div style={{ textAlign: 'center', padding: '2rem' }}>
                     <Text>⚠️ Excel Online URL not generated yet</Text>
@@ -459,11 +553,10 @@ export function ExcelEditItemEditorDefault({
                     appearance="primary"
                     icon={<Save20Regular />}
                     onClick={() => {
-                      loadOneLakeFolders();
-                      setCurrentState(WorkflowState.SAVING_TO_ONELAKE);
+                      setCurrentState(WorkflowState.CHOOSING_SAVE_DESTINATION);
                     }}
                   >
-                    Save to OneLake
+                    Save Changes
                   </Button>
                   <Button 
                     appearance="outline"
@@ -479,12 +572,12 @@ export function ExcelEditItemEditorDefault({
         
         // Show Excel file creation step
         return (
-          <Card className="workflow-card">
+          <Card>
             <CardHeader
               header={<Text weight="semibold">Step 3: Create Excel File</Text>}
               description={<Text>Setting up Excel Online editing environment</Text>}
             />
-            <div className="card-content" style={{ textAlign: 'center', padding: '2rem' }}>
+            <div style={{ textAlign: 'center', padding: '2rem' }}>
               <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📊</div>
               <h3>Creating Excel File for Online Editing</h3>
               {isCreatingExcelFile ? (
@@ -546,59 +639,122 @@ export function ExcelEditItemEditorDefault({
           </Card>
         );
 
+      case WorkflowState.CHOOSING_SAVE_DESTINATION:
+        return (
+          <Card>
+            <CardHeader
+              header={<Text weight="semibold">Step 4: Choose Save Destination</Text>}
+              description={<Text>Where would you like to save your edited data?</Text>}
+            />
+            <div style={{ padding: '2rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', maxWidth: '800px', margin: '0 auto' }}>
+                {/* Save to Lakehouse Option */}
+                <Card style={{ cursor: 'pointer', border: '2px solid #e1e1e1', transition: 'all 0.2s' }} 
+                      onClick={() => saveToLakehouse(excelData)}>
+                  <div style={{ padding: '2rem', textAlign: 'center' }}>
+                    <DatabaseSearch20Regular style={{ fontSize: '3rem', color: '#0078d4', marginBottom: '1rem' }} />
+                    <Text weight="semibold" size={500} block style={{ marginBottom: '0.5rem' }}>
+                      Update Lakehouse Table
+                    </Text>
+                    <Text size={300} block style={{ color: '#666', marginBottom: '1rem' }}>
+                      Save changes back to the original table in {selectedLakehouse?.name}
+                    </Text>
+                    <div style={{ backgroundColor: '#e3f2fd', padding: '1rem', borderRadius: '6px', fontSize: '14px', textAlign: 'left' }}>
+                      <strong>✅ Advantages:</strong><br />
+                      • Updates original data source<br />
+                      • Maintains data lineage<br />
+                      • Accessible to all workspace users<br />
+                      • Uses Spark/Delta Lake versioning
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Save to Item OneLake Option */}
+                <Card style={{ cursor: 'pointer', border: '2px solid #e1e1e1', transition: 'all 0.2s' }} 
+                      onClick={() => saveToItemOneLake(excelData)}>
+                  <div style={{ padding: '2rem', textAlign: 'center' }}>
+                    <FolderOpen20Regular style={{ fontSize: '3rem', color: '#107c10', marginBottom: '1rem' }} />
+                    <Text weight="semibold" size={500} block style={{ marginBottom: '0.5rem' }}>
+                      Save to Item Storage
+                    </Text>
+                    <Text size={300} block style={{ color: '#666', marginBottom: '1rem' }}>
+                      Save to this item's dedicated OneLake folder
+                    </Text>
+                    <div style={{ backgroundColor: '#f3f2f1', padding: '1rem', borderRadius: '6px', fontSize: '14px', textAlign: 'left' }}>
+                      <strong>📁 Path:</strong><br />
+                      /Items/{item?.id}/Tables/{selectedTable?.name}/<br />
+                      <br />
+                      <strong>✅ Advantages:</strong><br />
+                      • Private to this item<br />
+                      • Preserves edit history<br />
+                      • Separate from source data
+                    </div>
+                  </div>
+                </Card>
+              </div>
+              
+              <div style={{ textAlign: 'center', marginTop: '2rem' }}>
+                <Button 
+                  appearance="outline"
+                  onClick={() => setCurrentState(WorkflowState.EXCEL_EDITING)}
+                >
+                  ← Back to Editing
+                </Button>
+              </div>
+            </div>
+          </Card>
+        );
+
+      case WorkflowState.SAVING_TO_LAKEHOUSE:
+        return (
+          <Card>
+            <CardHeader
+              header={<Text weight="semibold">Updating Lakehouse Table</Text>}
+              description={<Text>Saving changes to {selectedTable?.displayName} in {selectedLakehouse?.name}</Text>}
+            />
+            <div style={{ textAlign: 'center', padding: '3rem' }}>
+              <Spinner size="large" />
+              <Text block style={{ marginTop: '1rem', fontSize: '18px' }}>
+                Updating table using Spark/Delta Lake...
+              </Text>
+              <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: '#f8f9fa', borderRadius: '8px', textAlign: 'left', fontSize: '14px' }}>
+                <strong>Process:</strong><br />
+                • Converting Excel data to Delta format<br />
+                • Validating schema compatibility<br />
+                • Creating new table version<br />
+                • Updating lakehouse metadata
+              </div>
+            </div>
+          </Card>
+        );
+
       case WorkflowState.SAVING_TO_ONELAKE:
         return (
-          <Card className="workflow-card">
+          <Card>
             <CardHeader
-              header={<Text weight="semibold">Step 4: Save to OneLake</Text>}
-              description={<Text>Choose destination folder in your OneLake</Text>}
+              header={<Text weight="semibold">Saving to Item Storage</Text>}
+              description={<Text>Saving to your item's dedicated OneLake folder</Text>}
             />
-            <div className="card-content">
-              {!isLoading && (
-                <>
-                  <Field label="Save Location">
-                    <Dropdown 
-                      placeholder="Select OneLake folder"
-                      value={selectedSaveFolder}
-                      onOptionSelect={(_, data) => setSelectedSaveFolder(data.optionValue || '')}
-                    >
-                      {oneLakeFolders.map((folder) => (
-                        <Option key={folder.path} value={folder.path} text={folder.name}>
-                          <FolderOpen20Regular style={{ marginRight: '0.5rem' }} />
-                          {folder.name}
-                        </Option>
-                      ))}
-                    </Dropdown>
-                  </Field>
-                  
-                  <div style={{ marginTop: '1rem' }}>
-                    <Button 
-                      appearance="primary"
-                      disabled={!selectedSaveFolder}
-                      onClick={() => saveToOneLake(excelData)}
-                    >
-                      Save Edited Data
-                    </Button>
-                  </div>
-                </>
-              )}
-              
-              {isLoading && (
-                <div style={{ textAlign: 'center', padding: '2rem' }}>
-                  <Spinner size="large" />
-                  <Text block style={{ marginTop: '1rem' }}>
-                    Saving data to OneLake...
-                  </Text>
-                </div>
-              )}
+            <div style={{ textAlign: 'center', padding: '3rem' }}>
+              <Spinner size="large" />
+              <Text block style={{ marginTop: '1rem', fontSize: '18px' }}>
+                Saving to /Items/{item?.id}/Tables/{selectedTable?.name}/
+              </Text>
+              <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: '#f8f9fa', borderRadius: '8px', textAlign: 'left', fontSize: '14px' }}>
+                <strong>Process:</strong><br />
+                • Creating item-specific folder structure<br />
+                • Converting data to Parquet format<br />
+                • Preserving edit metadata<br />
+                • Updating item definition
+              </div>
             </div>
           </Card>
         );
 
       case WorkflowState.COMPLETED:
         return (
-          <Card className="workflow-card">
-            <div className="card-content" style={{ textAlign: 'center', padding: '2rem' }}>
+          <Card>
+            <div style={{ textAlign: 'center', padding: '2rem' }}>
               <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>✅</div>
               <Text size={600} weight="semibold" block style={{ marginBottom: '1rem' }}>
                 Data Saved Successfully!
@@ -630,29 +786,37 @@ export function ExcelEditItemEditorDefault({
   };
 
   return (
-    <div className="excel-edit-container" style={{ padding: '1rem', maxWidth: '1200px', margin: '0 auto' }}>
+    <div className="main">
       {/* Progress indicator */}
       <div style={{ marginBottom: '2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
           {[
             { state: WorkflowState.SELECTING_TABLE, label: 'Lakehouse & Table' },
             { state: WorkflowState.EXCEL_EDITING, label: 'Excel Edit' },
-            { state: WorkflowState.SAVING_TO_ONELAKE, label: 'Save' },
-          ].map((step, index) => (
+            { state: WorkflowState.CHOOSING_SAVE_DESTINATION, label: 'Save Destination' },
+            { state: WorkflowState.SAVING_TO_LAKEHOUSE, label: 'Saving...' },
+            { state: WorkflowState.SAVING_TO_ONELAKE, label: 'Saving...' },
+          ].filter(step => {
+            // Only show saving states when active
+            if (step.state === WorkflowState.SAVING_TO_LAKEHOUSE || step.state === WorkflowState.SAVING_TO_ONELAKE) {
+              return currentState === step.state;
+            }
+            return true;
+          }).map((step, index, array) => (
             <React.Fragment key={step.state}>
               <Badge 
                 appearance={
                   currentState === step.state ? 'filled' : 
-                  Object.values(WorkflowState).indexOf(currentState) > Object.values(WorkflowState).indexOf(step.state) ? 'outline' : 'ghost'
+                  Object.values(WorkflowState).indexOf(currentState) > Object.values(WorkflowState).indexOf(step.state) ? 'outline' : 'outline'
                 }
                 color={
                   currentState === step.state ? 'brand' : 
-                  Object.values(WorkflowState).indexOf(currentState) > Object.values(WorkflowState).indexOf(step.state) ? 'success' : 'subtle'
+                  Object.values(WorkflowState).indexOf(currentState) > Object.values(WorkflowState).indexOf(step.state) ? 'success' : 'informative'
                 }
               >
                 {step.label}
               </Badge>
-              {index < 3 && <ChevronDown20Regular style={{ transform: 'rotate(-90deg)' }} />}
+              {index < array.length - 1 && <ChevronDown20Regular style={{ transform: 'rotate(-90deg)' }} />}
             </React.Fragment>
           ))}
         </div>
@@ -672,27 +836,31 @@ export function ExcelEditItemEditorDefault({
       {renderWorkflowStep()}
 
       {/* Workflow overview */}
-      <Card style={{ marginTop: '2rem' }}>
+      <Card>
         <CardHeader
-          header={<Text weight="semibold">Fabric-Native Excel Editing Workflow</Text>}
+          header={<Text weight="semibold" size={500}>Fabric-Native Excel Editing Workflow</Text>}
           description={<Text>Complete data editing experience without leaving Microsoft Fabric</Text>}
         />
-        <div className="card-content">
+        <div style={{ padding: '1rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-            <div>
-              <Text weight="semibold" block>1. DataHub Integration</Text>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#0078d4', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem', fontWeight: 'bold' }}>1</div>
+              <Text weight="semibold" block>DataHub Integration</Text>
               <Text size={200}>Select lakehouses and tables using Fabric's DataHub SDK</Text>
             </div>
-            <div>
-              <Text weight="semibold" block>2. Connected Workbooks</Text>
-              <Text size={200}>Edit data using @microsoft/connected-workbooks in Fabric</Text>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#0078d4', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem', fontWeight: 'bold' }}>2</div>
+              <Text weight="semibold" block>Enhanced Excel Demo</Text>
+              <Text size={200}>Edit data using interactive Excel-like interface in Fabric</Text>
             </div>
-            <div>
-              <Text weight="semibold" block>3. OneLake Storage</Text>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#0078d4', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem', fontWeight: 'bold' }}>3</div>
+              <Text weight="semibold" block>OneLake Storage</Text>
               <Text size={200}>Save edited data directly to your OneLake folders</Text>
             </div>
-            <div>
-              <Text weight="semibold" block>4. Fabric Native</Text>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#0078d4', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem', fontWeight: 'bold' }}>4</div>
+              <Text weight="semibold" block>Fabric Native</Text>
               <Text size={200}>Complete experience without leaving the Fabric environment</Text>
             </div>
           </div>

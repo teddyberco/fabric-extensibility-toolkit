@@ -733,9 +733,248 @@
         font-size: 14px;
         font-family: 'Segoe UI', sans-serif;
         font-weight: 400;
-        line-height: 20px;
-        margin-bottom: 16px;
       }
     }
   }
+}
+.workflow-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.workflow-card {
+  background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(229, 234, 240, 0.8);
+  transition: all 0.3s ease;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.workflow-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+}
+
+.workflow-step-content {
+  padding: 48px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.workflow-step-icon {
+  font-size: 64px;
+  color: #0078d4;
+  background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 8px;
+}
+
+.workflow-step-title {
+  font-size: 32px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #323130 0%, #605e5c 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 16px;
+}
+
+.workflow-step-description {
+  font-size: 18px;
+  color: #605e5c;
+  line-height: 1.6;
+  max-width: 600px;
+  margin-bottom: 32px;
+}
+
+.workflow-info-card {
+  background: linear-gradient(135deg, #faf9f8 0%, #f3f2f1 100%);
+  border-radius: 16px;
+  border: 1px solid #e1dfdd;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  margin-top: 32px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.workflow-info-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+}
+
+.workflow-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 32px;
+  padding: 32px;
+}
+
+.workflow-step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px;
+  background: linear-gradient(145deg, #ffffff 0%, #faf9f8 100%);
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(229, 234, 240, 0.6);
+  transition: all 0.3s ease;
+}
+
+.workflow-step-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.workflow-step-number {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 12px rgba(0, 120, 212, 0.3);
+}
+
+.workflow-step-title-small {
+  font-size: 18px;
+  font-weight: 600;
+  color: #323130;
+  margin-bottom: 8px;
+}
+
+.workflow-step-desc {
+  font-size: 14px;
+  color: #605e5c;
+  line-height: 1.5;
+}
+
+.selectable-card {
+  background: linear-gradient(145deg, #ffffff 0%, #faf9f8 100%);
+  border-radius: 12px;
+  border: 2px solid transparent;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.selectable-card:hover {
+  border-color: #0078d4;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 120, 212, 0.15);
+}
+
+.card-content {
+  padding: 24px;
+}
+
+// Button enhancements
+.workflow-card button {
+  padding: 16px 32px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
+  border: none;
+  box-shadow: 0 4px 16px rgba(0, 120, 212, 0.3);
+  transition: all 0.3s ease;
+}
+
+.workflow-card button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 120, 212, 0.4);
+}
+
+.table-card-content {
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.table-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.table-stats {
+  color: #605e5c;
+}
+
+.table-icon {
+  color: #0078d4;
+  font-size: 24px;
+}
+
+.loading-content {
+  text-align: center;
+  padding: 48px;
+}
+
+.excel-iframe-container {
+  padding: 48px;
+  text-align: center;
+}
+
+.excel-url-display {
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: #f3f2f1;
+  border-radius: 8px;
+}
+
+.excel-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.excel-edit-container {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.workflow-header {
+  margin-bottom: 32px;
+  text-align: center;
+  padding: 32px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(229, 234, 240, 0.8);
+}
+
+.header-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
 }
