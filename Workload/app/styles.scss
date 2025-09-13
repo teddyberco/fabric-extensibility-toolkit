@@ -1069,8 +1069,9 @@
 
 /* Table Editor (L2) Styles */
 .table-editor {
+  background: white; /* Preserve white canvas background in L2 */
+  min-height: 100vh;
   padding: 24px;
-  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -1198,4 +1199,11 @@
   justify-content: flex-end;
   padding-top: 16px;
   border-top: 1px solid #f3f2f1;
+}
+
+/* Back to Home tab button styling */
+.back-to-home-container {
+  padding: 8px 16px;
+  background: #f3f2f1;
+  border-bottom: 1px solid #e1e1e1;
 }

@@ -277,6 +277,8 @@ function CanvasOverviewView({
       workflowStep: 'table-editing' // Navigate to L2
     };
 
+    console.log('💾 Saving editing context:', updatedState);
+
     try {
       await saveItemDefinition<ExcelEditItemDefinition>(
         workloadClient,
@@ -285,8 +287,12 @@ function CanvasOverviewView({
       );
       
       console.log('✅ Editing context saved, navigating to table editor (L2)');
-      // Navigate to table editor (L2) with proper back navigation
-      onNavigateToTableEditor?.();
+      
+      // Give a moment for state to propagate
+      setTimeout(() => {
+        console.log('🧭 Navigating to table editor...');
+        onNavigateToTableEditor?.();
+      }, 100);
     } catch (error) {
       console.error('Failed to save editing context:', error);
     }
@@ -442,38 +448,39 @@ function TableEditorView({
   // Load current editing context
   useEffect(() => {
     const workflowState = item?.definition?.state as ExcelEditWorkflowState;
+    console.log('🔍 TableEditor: Loading editing context...', workflowState?.currentEditingItem);
+    
     if (workflowState?.currentEditingItem) {
-      // Find the full item from canvas items
-      const fullItem = workflowState.canvasItems?.find(
+      // Try to find the full item from canvas items first
+      let fullItem = workflowState.canvasItems?.find(
         item => item.id === workflowState.currentEditingItem?.id
       );
-      if (fullItem) {
-        setCurrentEditingItem(fullItem);
+      
+      // If not found in canvas items, create a basic item from currentEditingItem
+      if (!fullItem && workflowState.currentEditingItem) {
+        console.log('🔄 Creating basic item from currentEditingItem');
+        fullItem = {
+          id: workflowState.currentEditingItem.id,
+          type: workflowState.currentEditingItem.type as any,
+          name: workflowState.currentEditingItem.name,
+          displayName: workflowState.currentEditingItem.displayName,
+          source: {
+            lakehouse: workflowState.selectedLakehouse,
+            table: workflowState.selectedTable
+          }
+        };
       }
+      
+      if (fullItem) {
+        console.log('✅ TableEditor: Found editing item:', fullItem.displayName);
+        setCurrentEditingItem(fullItem);
+      } else {
+        console.log('❌ TableEditor: Could not resolve editing item');
+      }
+    } else {
+      console.log('❌ TableEditor: No currentEditingItem in state');
     }
   }, [item]);
-
-  const handleBackToCanvas = async () => {
-    // Clear current editing context
-    const workflowState = item?.definition?.state as ExcelEditWorkflowState ?? {};
-    const updatedState: ExcelEditWorkflowState = {
-      ...workflowState,
-      currentEditingItem: undefined,
-      workflowStep: 'canvas-overview'
-    };
-
-    try {
-      await saveItemDefinition<ExcelEditItemDefinition>(
-        workloadClient,
-        item!.id,
-        { state: updatedState }
-      );
-      
-      onNavigateToCanvasOverview?.();
-    } catch (error) {
-      console.error('Failed to clear editing context:', error);
-    }
-  };
 
   if (!currentEditingItem) {
     return (
@@ -486,19 +493,7 @@ function TableEditorView({
 
   return (
     <div className="table-editor">
-      {/* Breadcrumb */}
-      <div className="table-editor-breadcrumb">
-        <Button 
-          appearance="subtle" 
-          onClick={handleBackToCanvas}
-        >
-          ← Back to Canvas
-        </Button>
-        <Text size={300}>/</Text>
-        <Text size={400} weight="semibold">{currentEditingItem.displayName}</Text>
-      </div>
-
-      {/* Table Editor Content */}
+      {/* Table Editor Content - back button now in main editor above ribbon */}
       <div className="table-editor-content">
         <Card>
           <CardHeader

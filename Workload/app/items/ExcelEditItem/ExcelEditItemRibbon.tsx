@@ -7,8 +7,7 @@ import {
 import {
   Save24Regular,
   Settings24Regular,
-  Rocket24Regular,
-  ArrowLeft24Regular
+  Rocket24Regular
 } from "@fluentui/react-icons";
 import { PageProps } from '../../App';
 import { CurrentView, VIEW_TYPES } from "./ExcelEditItemModel";
@@ -46,22 +45,6 @@ const ExcelEditItemTabToolbar: React.FC<ExcelEditItemRibbonProps> = (props) => {
 
   return (
     <Toolbar>
-      {/* Back to Home tab Button - Only show in TABLE_EDITOR view */}
-      {props.currentView === VIEW_TYPES.TABLE_EDITOR && (
-        <Tooltip
-          content={t("ItemEditor_Ribbon_BackToHome_Label", "Back to Home tab")}
-          relationship="label">
-          <ToolbarButton
-            aria-label={t("ItemEditor_Ribbon_BackToHome_Label", "Back to Home tab")}
-            data-testid="item-editor-back-to-home-btn"
-            icon={<ArrowLeft24Regular />}
-            onClick={handleCanvasOverviewClick}
-          >
-            {t("ItemEditor_Ribbon_BackToHome_Label", "Back to Home tab")}
-          </ToolbarButton>
-        </Tooltip>
-      )}
-
       {/* Save Button - Disabled */}
       <Tooltip
         content={t("ItemEditor_Ribbon_Save_Label")}
@@ -112,12 +95,14 @@ export function ExcelEditItemRibbon(props: ExcelEditItemRibbonProps) {
 
   return (
     <div className="ribbon">
-      {/* Always show Home tab for consistent navigation */}
-      <TabList defaultSelectedValue="home">
-        <Tab value="home" data-testid="home-tab-btn">
-          {t("ItemEditor_Ribbon_Home_Label")}
-        </Tab>
-      </TabList>
+      {/* Only show Home tab in L1 views, not in L2 (TABLE_EDITOR) */}
+      {props.currentView !== VIEW_TYPES.TABLE_EDITOR && (
+        <TabList defaultSelectedValue="home">
+          <Tab value="home" data-testid="home-tab-btn">
+            {t("ItemEditor_Ribbon_Home_Label")}
+          </Tab>
+        </TabList>
+      )}
 
       {/* Toolbar Container */}
       <div className="toolbarContainer">

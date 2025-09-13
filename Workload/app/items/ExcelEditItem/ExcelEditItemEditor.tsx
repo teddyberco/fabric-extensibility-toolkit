@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { Stack } from "@fluentui/react";
+import { Button } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import { PageProps, ContextProps } from "../../App";
 import { ItemWithDefinition, getWorkloadItem, callGetItem, saveItemDefinition, callGetItemDefinition, convertGetItemResultToWorkloadItem } from "../../controller/ItemCRUDController";
@@ -157,32 +158,32 @@ export function ExcelEditItemEditor(props: PageProps) {
       return;
     }
     
-    const currentState = item.definition?.state as ExcelEditWorkflowState || createEmptyWorkflowState();
-    const updatedState: ExcelEditWorkflowState = {
-      ...currentState,
-      workflowStep: 'table-editing'
-    };
-
+    // Reload the item to get the fresh state (after editing context save)
     try {
-      await saveItemDefinition(workloadClient, item.id, {
-        ...item.definition,
-        state: updatedState
-      });
+      console.log('🔄 Reloading item to get fresh editing state...');
+      const freshItem = await callGetItem(workloadClient, item.id);
+      const freshDefinition = await callGetItemDefinition(workloadClient, item.id);
       
-      // Update local state
-      setItem({
-        ...item,
-        definition: {
-          ...item.definition,
-          state: updatedState
-        }
-      });
+      console.log('🔍 Debug fresh editing state:', freshDefinition?.definition);
       
-      // Set the view to table editor (L2)
+      // Use the proper convertGetItemResultToWorkloadItem function
+      const updatedItem = convertGetItemResultToWorkloadItem<ExcelEditItemDefinition>(
+        freshItem,
+        freshDefinition,
+        createEmptyWorkflowState() as ExcelEditItemDefinition
+      );
+      
+      console.log('✅ Fresh item loaded for table editor:', updatedItem);
+      console.log('✅ Fresh editing state:', updatedItem.definition?.state);
+      setItem(updatedItem);
+      
+      // Set the view to table editor
       setCurrentView(VIEW_TYPES.TABLE_EDITOR);
       console.log('✅ View set to TABLE_EDITOR (L2)');
     } catch (error) {
-      console.error('❌ Error navigating to table editor:', error);
+      console.error('❌ Error reloading item for table editor navigation:', error);
+      // Fallback - just set the view anyway
+      setCurrentView(VIEW_TYPES.TABLE_EDITOR);
     }
   };
 
@@ -252,6 +253,50 @@ export function ExcelEditItemEditor(props: PageProps) {
   // Render appropriate view based on state
   return (
     <Stack className="editor" data-testid="item-editor-inner">
+      {/* Back to Home tab button - shown above ribbon for L2 views */}
+      {currentView === VIEW_TYPES.TABLE_EDITOR && (
+        <div className="back-to-home-container">
+          <Button 
+            appearance="subtle" 
+            onClick={async () => {
+              // Clear current editing context when going back
+              const currentState = item?.definition?.state as ExcelEditWorkflowState;
+              if (currentState && item) {
+                const updatedState: ExcelEditWorkflowState = {
+                  ...currentState,
+                  currentEditingItem: undefined,
+                  workflowStep: 'canvas-overview'
+                };
+
+                try {
+                  await saveItemDefinition<ExcelEditItemDefinition>(
+                    workloadClient,
+                    item.id,
+                    { state: updatedState }
+                  );
+                  
+                  // Update local state
+                  setItem({
+                    ...item,
+                    definition: {
+                      ...item.definition,
+                      state: updatedState
+                    }
+                  });
+                } catch (error) {
+                  console.error('Failed to clear editing context:', error);
+                }
+              }
+              
+              navigateToCanvasOverview();
+            }}
+            icon={<span>←</span>}
+          >
+            Back to Home tab
+          </Button>
+        </div>
+      )}
+      
       <ExcelEditItemRibbon
         {...props}
         isSaveButtonEnabled={isSaveEnabled()}
