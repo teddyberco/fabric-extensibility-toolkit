@@ -978,3 +978,224 @@
   gap: 16px;
   justify-content: center;
 }
+
+/* Canvas-Centric Excel Editing Styles */
+.canvas-overview {
+  background: white; /* Clean white canvas background */
+  min-height: 100vh; /* Full height canvas */
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow: auto;
+}
+
+.canvas-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.canvas-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.empty-canvas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 48px;
+  text-align: center;
+  /* Remove the dashed border for a cleaner canvas feel */
+  color: #666;
+  background: transparent;
+}
+
+.canvas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.canvas-item-card {
+  background: white;
+  border: 1px solid #e1e1e1;
+  border-radius: 8px;
+  transition: box-shadow 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08); /* Subtle shadow to float on canvas */
+}
+
+.canvas-item-card:hover {
+  box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+}
+
+.canvas-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.canvas-item-content {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.table-info, .last-edited {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #666;
+}
+
+.canvas-item-actions {
+  padding: 16px;
+  border-top: 1px solid #f3f2f1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Table Editor (L2) Styles */
+.table-editor {
+  padding: 24px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.table-editor-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #666;
+}
+
+.table-editor-content {
+  flex: 1;
+  overflow: auto;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.editor-content {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.table-info {
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.table-stats {
+  display: flex;
+  gap: 24px;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #666;
+}
+
+.table-editor-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  height: 100%;
+}
+
+/* Table Selector Dialog Styles */
+.table-selector-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.table-selector-dialog {
+  width: 600px;
+  max-width: 90vw;
+  max-height: 80vh;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.table-selector-content {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.table-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.table-option {
+  border: 1px solid #e1e1e1;
+  border-radius: 6px;
+  transition: border-color 0.2s ease;
+}
+
+.table-option:hover {
+  border-color: #0078d4;
+}
+
+.table-option-content {
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.table-option-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.table-selector-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+  border-top: 1px solid #f3f2f1;
+}

@@ -27,9 +27,15 @@ npm run build
 
 # ❌ INCORRECT - Will fail with "package.json not found"
 npm start  # (when in root directory)
+
+# ⚠️ CRITICAL: When using run_in_terminal tool, ALWAYS use compound commands
+# npm start creates a new process and resets the working directory
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm start    # ✅ Required
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm install  # ✅ Required
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm run build # ✅ Required
 ```
 
-**Technical Reason**: The `package.json`, `tsconfig.json`, and all Node.js configurations are located in the `Workload/` subdirectory, not the repository root.
+**Technical Reason**: The `package.json`, `tsconfig.json`, and all Node.js configurations are located in the `Workload/` subdirectory, not the repository root. Additionally, `npm start` spawns a new process that resets the working directory, so compound commands with absolute paths are essential.
 
 ## 🤖 GitHub Copilot Enhanced Features
 
@@ -102,12 +108,15 @@ Instead of manual file creation, GitHub Copilot can generate complete structures
 GitHub Copilot understands context-aware shortcuts:
 
 ```powershell
-# IMPORTANT: Always use absolute path or compound command for npm operations
-cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm start    # ✅ Reliable startup
+# ⚠️ CRITICAL: ALWAYS use absolute path compound commands for npm operations
+# npm commands create new processes that reset the working directory
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm start    # ✅ Required for startup
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm install  # ✅ Required for dependencies
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm run build # ✅ Required for builds
 
-# Alternative compound commands that work:
-cd Workload && npm install     # ✅ Dependencies installation
-cd Workload && npm run build   # ✅ Production build
+# ❌ NEVER use these patterns - they will fail:
+npm start         # Fails - wrong directory and process reset
+cd Workload; npm start  # Fails - process reset loses directory context
 
 # Smart environment detection with .env-based configuration
 fabric dev start    # Automatically uses .env.dev configuration

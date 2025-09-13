@@ -3,11 +3,11 @@ import { useParams, useLocation } from "react-router-dom";
 import { Stack } from "@fluentui/react";
 import { useTranslation } from "react-i18next";
 import { PageProps, ContextProps } from "../../App";
-import { ItemWithDefinition, getWorkloadItem, callGetItem, saveItemDefinition } from "../../controller/ItemCRUDController";
+import { ItemWithDefinition, getWorkloadItem, callGetItem, saveItemDefinition, callGetItemDefinition, convertGetItemResultToWorkloadItem } from "../../controller/ItemCRUDController";
 import { callOpenSettings } from "../../controller/SettingsController";
 import { callNotificationOpen } from "../../controller/NotificationController";
 import { ItemEditorLoadingProgressBar } from "../../controls/ItemEditorLoadingProgressBar";
-import { ExcelEditItemDefinition, VIEW_TYPES, CurrentView } from "./ExcelEditItemModel";
+import { ExcelEditItemDefinition, VIEW_TYPES, CurrentView, ExcelEditWorkflowState, isWorkflowStateValid, shouldShowCanvasOverview, shouldShowTableEditor, createEmptyWorkflowState } from "./ExcelEditItemModel";
 import { ExcelEditItemEditorEmpty } from "./ExcelEditItemEditorEmpty";
 import { ExcelEditItemEditorDefault } from "./ExcelEditItemEditorDefault";
 import "../../styles.scss";
@@ -52,7 +52,26 @@ export function ExcelEditItemEditor(props: PageProps) {
         }
 
         setItem(LoadedItem);
-        setCurrentView(!LoadedItem?.definition?.state ? VIEW_TYPES.EMPTY : VIEW_TYPES.GETTING_STARTED);
+        
+        // Smart view determination based on saved state
+        const workflowState = LoadedItem?.definition?.state as ExcelEditWorkflowState;
+        if (!LoadedItem?.definition?.state || !isWorkflowStateValid(workflowState)) {
+          // No valid state - show empty view to start workflow
+          setCurrentView(VIEW_TYPES.EMPTY);
+          console.log('📍 No valid state found - showing empty view');
+        } else if (shouldShowTableEditor(workflowState)) {
+          // Valid state with current editing item - go to table editor (L2)
+          setCurrentView(VIEW_TYPES.TABLE_EDITOR);
+          console.log('📍 Valid state with editing item - showing table editor (L2)');
+        } else if (shouldShowCanvasOverview(workflowState)) {
+          // Valid state with canvas items - show canvas overview (L1)
+          setCurrentView(VIEW_TYPES.CANVAS_OVERVIEW);
+          console.log('📍 Valid state with canvas items - showing canvas overview (L1)');
+        } else {
+          // Fallback to canvas overview
+          setCurrentView(VIEW_TYPES.CANVAS_OVERVIEW);
+          console.log('📍 Fallback - showing canvas overview');
+        }
 
       } catch (error) {
         setItem(undefined);
@@ -71,9 +90,100 @@ export function ExcelEditItemEditor(props: PageProps) {
     loadDataFromUrl(pageContext, pathname);
   }, [pageContext, pathname]);
 
+  // Determine current view based on item state
+  useEffect(() => {
+    if (!item?.definition?.state) {
+      setCurrentView(VIEW_TYPES.EMPTY);
+      return;
+    }
 
-  const navigateToGettingStarted = () => {
-    setCurrentView(VIEW_TYPES.GETTING_STARTED);
+    const workflowState = item.definition.state as ExcelEditWorkflowState;
+    
+    if (shouldShowTableEditor(workflowState)) {
+      setCurrentView(VIEW_TYPES.TABLE_EDITOR);
+    } else if (shouldShowCanvasOverview(workflowState)) {
+      setCurrentView(VIEW_TYPES.CANVAS_OVERVIEW);
+    } else {
+      setCurrentView(VIEW_TYPES.EMPTY);
+    }
+  }, [item?.definition?.state]);
+
+
+  const navigateToCanvasOverview = async () => {
+    console.log('🧭 navigateToCanvasOverview called');
+    if (!item) {
+      console.log('❌ No item available for navigation');
+      return;
+    }
+    
+    console.log('📍 Current item state before navigation:', item.definition?.state);
+    
+    // Reload the item to get the fresh state (after table selection save)
+    try {
+      console.log('🔄 Reloading item to get fresh state...');
+      const freshItem = await callGetItem(workloadClient, item.id);
+      const freshDefinition = await callGetItemDefinition(workloadClient, item.id);
+      
+      console.log('🔍 Debug freshItem:', freshItem);
+      console.log('🔍 Debug freshDefinition:', freshDefinition);
+      console.log('🔍 Debug freshDefinition.definition:', freshDefinition?.definition);
+      
+      // Use the proper convertGetItemResultToWorkloadItem function
+      const updatedItem = convertGetItemResultToWorkloadItem<ExcelEditItemDefinition>(
+        freshItem,
+        freshDefinition,
+        createEmptyWorkflowState() as ExcelEditItemDefinition
+      );
+      
+      console.log('✅ Fresh item loaded:', updatedItem);
+      console.log('✅ Fresh item definition:', updatedItem.definition);
+      console.log('✅ Fresh item state:', updatedItem.definition?.state);
+      setItem(updatedItem);
+      
+      // Set the view to canvas overview
+      setCurrentView(VIEW_TYPES.CANVAS_OVERVIEW);
+      console.log('✅ View set to CANVAS_OVERVIEW with fresh state');
+    } catch (error) {
+      console.error('❌ Error reloading item for navigation:', error);
+      // Fallback - just set the view anyway
+      setCurrentView(VIEW_TYPES.CANVAS_OVERVIEW);
+    }
+  };
+
+  const navigateToTableEditor = async () => {
+    console.log('🧭 navigateToTableEditor called');
+    if (!item) {
+      console.log('❌ No item available for table editor navigation');
+      return;
+    }
+    
+    const currentState = item.definition?.state as ExcelEditWorkflowState || createEmptyWorkflowState();
+    const updatedState: ExcelEditWorkflowState = {
+      ...currentState,
+      workflowStep: 'table-editing'
+    };
+
+    try {
+      await saveItemDefinition(workloadClient, item.id, {
+        ...item.definition,
+        state: updatedState
+      });
+      
+      // Update local state
+      setItem({
+        ...item,
+        definition: {
+          ...item.definition,
+          state: updatedState
+        }
+      });
+      
+      // Set the view to table editor (L2)
+      setCurrentView(VIEW_TYPES.TABLE_EDITOR);
+      console.log('✅ View set to TABLE_EDITOR (L2)');
+    } catch (error) {
+      console.error('❌ Error navigating to table editor:', error);
+    }
   };
 
   const handleOpenSettings = async () => {
@@ -88,12 +198,16 @@ export function ExcelEditItemEditor(props: PageProps) {
   };
 
   async function SaveItem() {
+    if (!item?.definition?.state) {
+      console.error('❌ No item state to save');
+      return;
+    }
+
     var successResult = await saveItemDefinition<ExcelEditItemDefinition>(
       workloadClient,
       item.id,
-      {
-        state: VIEW_TYPES.GETTING_STARTED
-      });
+      item.definition
+    );
     const wasSaved = Boolean(successResult);
     setHasBeenSaved(wasSaved);
     callNotificationOpen(
@@ -110,7 +224,7 @@ export function ExcelEditItemEditor(props: PageProps) {
       return false;
     }
 
-    if (currentView === VIEW_TYPES.GETTING_STARTED) {
+    if (currentView === VIEW_TYPES.CANVAS_OVERVIEW || currentView === VIEW_TYPES.TABLE_EDITOR) {
       if (hasBeenSaved) {
         return false;
       }
@@ -144,18 +258,27 @@ export function ExcelEditItemEditor(props: PageProps) {
         currentView={currentView}
         saveItemCallback={SaveItem}
         openSettingsCallback={handleOpenSettings}
-        navigateToGettingStartedCallback={navigateToGettingStarted}
+        navigateToCanvasOverviewCallback={navigateToCanvasOverview}
       />
       {currentView === VIEW_TYPES.EMPTY ? (
         <ExcelEditItemEditorEmpty
           workloadClient={workloadClient}
           item={item}
-          onNavigateToGettingStarted={navigateToGettingStarted}
+          onNavigateToCanvasOverview={navigateToCanvasOverview}
+        />
+      ) : currentView === VIEW_TYPES.CANVAS_OVERVIEW ? (
+        <ExcelEditItemEditorDefault
+          workloadClient={workloadClient}
+          item={item}
+          currentView={currentView}
+          onNavigateToTableEditor={navigateToTableEditor}
         />
       ) : (
         <ExcelEditItemEditorDefault
           workloadClient={workloadClient}
           item={item}
+          currentView={currentView}
+          onNavigateToCanvasOverview={navigateToCanvasOverview}
         />
       )}
     </Stack>

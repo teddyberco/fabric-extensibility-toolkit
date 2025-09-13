@@ -1,17 +1,17 @@
 import React, { useState } from "react";
 import { Button, Text } from "@fluentui/react-components";
 import { CloudDatabase20Regular, DatabaseSearch20Regular } from "@fluentui/react-icons";
-import { callDatahubOpen } from "../../controller/DataHubController";
+import { callDatahubWizardOpen } from "../../controller/DataHubController";
 
 import { WorkloadClientAPI } from "@ms-fabric/workload-client";
-import { ItemWithDefinition } from "../../controller/ItemCRUDController";
-import { ExcelEditItemDefinition } from "./ExcelEditItemModel";
+import { ItemWithDefinition, saveItemDefinition } from "../../controller/ItemCRUDController";
+import { ExcelEditItemDefinition, ExcelEditWorkflowState, createEmptyWorkflowState } from "./ExcelEditItemModel";
 import "../../styles.scss";
 
 interface ExcelEditItemEditorEmptyProps {
   workloadClient: WorkloadClientAPI;
   item?: ItemWithDefinition<ExcelEditItemDefinition>;
-  onNavigateToGettingStarted: () => void;
+  onNavigateToCanvasOverview: () => void;
 }
 
 /**
@@ -21,7 +21,7 @@ interface ExcelEditItemEditorEmptyProps {
 export function ExcelEditItemEditorEmpty({
   workloadClient,
   item,
-  onNavigateToGettingStarted
+  onNavigateToCanvasOverview
 }: ExcelEditItemEditorEmptyProps) {
   const [isLoading, setIsLoading] = useState(false);
 
@@ -29,33 +29,106 @@ export function ExcelEditItemEditorEmpty({
     setIsLoading(true);
     
     try {
-      console.log('🔍 Opening DataHub lakehouse selector...');
+      console.log('🔍 Opening OneLake catalog experience for table selection...');
       
-      // Use the official Fabric SDK DataHub API for lakehouse selection
-      const selectedLakehouse = await callDatahubOpen(
+      // Use the wizard version which should allow deeper navigation into tables
+      const result = await callDatahubWizardOpen(
         workloadClient,
         ["Lakehouse"],
-        "Select a lakehouse to use for Excel data integration",
-        false,
-        true
+        "Select Table",
+        "Select a table from your lakehouse to edit with Excel Online",
+        false, // Single selection
+        true,  // Show files folder (enables table browsing)
+        true   // Workspace navigation enabled
       );
       
-      if (selectedLakehouse) {
-        console.log('✅ Lakehouse selected:', selectedLakehouse);
-        
-        // Store lakehouse selection in localStorage for the main editor to pick up
-        const lakehouseInfo = {
-          id: selectedLakehouse.id,
-          name: selectedLakehouse.displayName,
-          workspaceId: selectedLakehouse.workspaceId
-        };
-        localStorage.setItem('selectedLakehouse', JSON.stringify(lakehouseInfo));
-        
-        // Navigate to the main editor which will skip lakehouse selection
-        onNavigateToGettingStarted();
+      console.log('📊 OneLake catalog result:', result);
+      console.log('📊 Selected path:', result?.selectedPath);
+      
+      if (result) {
+        // Check if we have table-level selection in selectedPath
+        if (result.selectedPath && result.selectedPath.includes('/')) {
+          console.log('✅ Table selected via OneLake catalog:', result.selectedPath);
+          
+          // Parse the path to get lakehouse and table info
+          const pathParts = result.selectedPath.split('/');
+          const tableName = pathParts[pathParts.length - 1];
+          
+          // Create lakehouse and table info
+          const lakehouseInfo = {
+            id: result.id,
+            name: result.displayName,
+            workspaceId: result.workspaceId
+          };
+          
+          const tableInfo = {
+            name: tableName,
+            displayName: tableName,
+            schema: [] as Array<{ name: string; dataType: string }>, // Will be populated later
+            rowCount: 0 // Will be populated later
+          };
+          
+          // Save complete selection to state
+          const updatedState: ExcelEditWorkflowState = {
+            ...createEmptyWorkflowState(),
+            selectedLakehouse: lakehouseInfo,
+            selectedTable: tableInfo,
+            workflowStep: 'canvas-overview',
+          };
+          
+          // Save state to Fabric SDK
+          await saveItemDefinition<ExcelEditItemDefinition>(
+            workloadClient,
+            item!.id,
+            { state: updatedState }
+          );
+          
+          console.log('✅ Table selection saved to Fabric SDK');
+          console.log('⏳ Waiting brief moment for state propagation...');
+          
+          // Give the state a moment to propagate before navigating
+          setTimeout(() => {
+            console.log('🧭 Navigating to canvas overview...');
+            onNavigateToCanvasOverview();
+          }, 200);
+          
+        } else {
+          // Only lakehouse selected, no table
+          console.log('⚠️ Only lakehouse selected, no table path found');
+          console.log('📊 Full result for debugging:', JSON.stringify(result, null, 2));
+          
+          // Save the lakehouse selection and navigate to canvas overview
+          const lakehouseInfo = {
+            id: result.id,
+            name: result.displayName,
+            workspaceId: result.workspaceId
+          };
+          
+          console.log('💾 Saving lakehouse info:', lakehouseInfo);
+          
+          const updatedState: ExcelEditWorkflowState = {
+            ...createEmptyWorkflowState(),
+            selectedLakehouse: lakehouseInfo,
+            workflowStep: 'canvas-overview',
+          };
+          
+          console.log('💾 Saving state:', updatedState);
+          
+          await saveItemDefinition<ExcelEditItemDefinition>(
+            workloadClient,
+            item!.id,
+            { state: updatedState }
+          );
+          
+          console.log('✅ Lakehouse selection saved to Fabric SDK');
+          console.log('🧭 Navigating to canvas overview...');
+          onNavigateToCanvasOverview();
+        }
+      } else {
+        console.log('❌ No selection made (user cancelled)');
       }
     } catch (err) {
-      console.error('Lakehouse selection error:', err);
+      console.error('❌ OneLake catalog error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -67,75 +140,32 @@ export function ExcelEditItemEditorEmpty({
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <CloudDatabase20Regular style={{ fontSize: '4rem', color: '#0078d4', marginBottom: '1rem' }} />
           <Text size={600} weight="semibold" block style={{ marginBottom: '0.5rem' }}>
-            Excel Lakehouse Editor
+            Excel Table Editor
           </Text>
           <Text size={400} block style={{ color: '#605e5c', marginBottom: '2rem' }}>
-            Connect to your Fabric Lakehouse to edit data with Excel
+            Select a table to edit with Excel Online
           </Text>
         </div>
 
-        <div style={{ maxWidth: '500px', margin: '0 auto' }}>
-          {/* Step 1: Lakehouse Selection */}
-          <div style={{ marginBottom: '2rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#0078d4', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 'bold' }}>1</div>
-              <Text weight="semibold" size={400}>Select Your Lakehouse</Text>
+        <div style={{ maxWidth: '300px', margin: '0 auto' }}>
+          <Button 
+            appearance="primary" 
+            icon={<DatabaseSearch20Regular />}
+            onClick={loadLakehouses}
+            disabled={isLoading}
+            size="large"
+            style={{ width: '100%' }}
+          >
+            {isLoading ? 'Opening OneLake Catalog...' : 'Open Table'}
+          </Button>
+          
+          {isLoading && (
+            <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+              <Text size={300} style={{ color: '#666' }}>
+                Opening OneLake catalog experience...
+              </Text>
             </div>
-            
-            <div style={{ padding: '1.5rem', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '1px solid #e1e1e1', textAlign: 'left' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                <DatabaseSearch20Regular style={{ fontSize: '1.5rem', color: '#0078d4' }} />
-                <div>
-                  <Text weight="semibold" block>Choose a Lakehouse</Text>
-                  <Text size={200} style={{ color: '#666' }}>
-                    Select the lakehouse containing the data you want to edit
-                  </Text>
-                </div>
-              </div>
-              
-              <Button 
-                appearance="primary" 
-                icon={<DatabaseSearch20Regular />}
-                onClick={loadLakehouses}
-                disabled={isLoading}
-                style={{ width: '100%' }}
-              >
-                {isLoading ? 'Opening DataHub...' : 'Browse Lakehouses'}
-              </Button>
-              
-              {isLoading && (
-                <div style={{ marginTop: '1rem', textAlign: 'center' }}>
-                  <Text size={200} style={{ color: '#666' }}>
-                    Opening Fabric DataHub for lakehouse selection...
-                  </Text>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Preview of Next Steps */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.5rem' }}>
-            <div style={{ padding: '0.75rem', backgroundColor: '#f3f2f1', borderRadius: '6px', opacity: '0.6', textAlign: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem', marginBottom: '0.25rem' }}>
-                <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: '#d1d1d1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>2</div>
-                <Text size={200} style={{ color: '#666' }}>Select Table</Text>
-              </div>
-            </div>
-            
-            <div style={{ padding: '0.75rem', backgroundColor: '#f3f2f1', borderRadius: '6px', opacity: '0.6', textAlign: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem', marginBottom: '0.25rem' }}>
-                <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: '#d1d1d1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>3</div>
-                <Text size={200} style={{ color: '#666' }}>Edit in Excel</Text>
-              </div>
-            </div>
-            
-            <div style={{ padding: '0.75rem', backgroundColor: '#f3f2f1', borderRadius: '6px', opacity: '0.6', textAlign: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem', marginBottom: '0.25rem' }}>
-                <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: '#d1d1d1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>4</div>
-                <Text size={200} style={{ color: '#666' }}>Save to OneLake</Text>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

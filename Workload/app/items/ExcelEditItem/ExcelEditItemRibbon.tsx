@@ -7,7 +7,8 @@ import {
 import {
   Save24Regular,
   Settings24Regular,
-  Rocket24Regular
+  Rocket24Regular,
+  ArrowLeft24Regular
 } from "@fluentui/react-icons";
 import { PageProps } from '../../App';
 import { CurrentView, VIEW_TYPES } from "./ExcelEditItemModel";
@@ -15,14 +16,14 @@ import { useTranslation } from "react-i18next";
 import '../../styles.scss';
 
 /**
- * Props interface for the Empty State Ribbon component
+ * Props interface for the Excel Edit Item Ribbon component
  */
 export interface ExcelEditItemRibbonProps extends PageProps {
   isSaveButtonEnabled?: boolean;
   currentView: CurrentView;
   saveItemCallback: () => Promise<void>;
   openSettingsCallback: () => Promise<void>;
-  navigateToGettingStartedCallback: () => void;
+  navigateToCanvasOverviewCallback: () => void;
 }
 
 
@@ -34,8 +35,8 @@ const ExcelEditItemTabToolbar: React.FC<ExcelEditItemRibbonProps> = (props) => {
     await props.openSettingsCallback();
   };
 
-  const handleGettingStartedClick = () => {
-    props.navigateToGettingStartedCallback();
+  const handleCanvasOverviewClick = () => {
+    props.navigateToCanvasOverviewCallback();
   };
 
   async function onSaveAsClicked() {
@@ -45,6 +46,22 @@ const ExcelEditItemTabToolbar: React.FC<ExcelEditItemRibbonProps> = (props) => {
 
   return (
     <Toolbar>
+      {/* Back to Home tab Button - Only show in TABLE_EDITOR view */}
+      {props.currentView === VIEW_TYPES.TABLE_EDITOR && (
+        <Tooltip
+          content={t("ItemEditor_Ribbon_BackToHome_Label", "Back to Home tab")}
+          relationship="label">
+          <ToolbarButton
+            aria-label={t("ItemEditor_Ribbon_BackToHome_Label", "Back to Home tab")}
+            data-testid="item-editor-back-to-home-btn"
+            icon={<ArrowLeft24Regular />}
+            onClick={handleCanvasOverviewClick}
+          >
+            {t("ItemEditor_Ribbon_BackToHome_Label", "Back to Home tab")}
+          </ToolbarButton>
+        </Tooltip>
+      )}
+
       {/* Save Button - Disabled */}
       <Tooltip
         content={t("ItemEditor_Ribbon_Save_Label")}
@@ -73,13 +90,13 @@ const ExcelEditItemTabToolbar: React.FC<ExcelEditItemRibbonProps> = (props) => {
       {/* Getting Started Button */}
       {props.currentView === VIEW_TYPES.EMPTY && (
       <Tooltip
-        content={t("ItemEditor_Ribbon_GettingStarted_Label", "Getting Started")}
+        content={t("ItemEditor_Ribbon_CanvasOverview_Label", "Canvas Overview")}
         relationship="label">
         <ToolbarButton
-          aria-label={t("ItemEditor_Ribbon_GettingStarted_Label", "Getting Started")}
-          data-testid="item-editor-getting-started-btn"
+          aria-label={t("ItemEditor_Ribbon_CanvasOverview_Label", "Canvas Overview")}
+          data-testid="item-editor-canvas-overview-btn"
           icon={<Rocket24Regular />}
-          onClick={handleGettingStartedClick}
+          onClick={handleCanvasOverviewClick}
         />
       </Tooltip>
       )}
@@ -95,13 +112,12 @@ export function ExcelEditItemRibbon(props: ExcelEditItemRibbonProps) {
 
   return (
     <div className="ribbon">
-      {props.currentView === VIEW_TYPES.EMPTY && (
+      {/* Always show Home tab for consistent navigation */}
       <TabList defaultSelectedValue="home">
         <Tab value="home" data-testid="home-tab-btn">
           {t("ItemEditor_Ribbon_Home_Label")}
         </Tab>
       </TabList>
-      )}
 
       {/* Toolbar Container */}
       <div className="toolbarContainer">
