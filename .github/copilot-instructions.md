@@ -1,6 +1,26 @@
 # GitHub Copilot Instructions for Microsoft Fabric Extensibility Toolkit
 
-## 📋 Overview
+## � CRITICAL: npm Command Pattern
+
+**⚠️ MANDATORY FOR ALL npm COMMANDS:**
+```bash
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm [COMMAND]
+```
+
+**❌ NEVER use separate commands:**
+```bash
+cd Workload
+npm start  # FAILS - npm resets directory context
+```
+
+**✅ ALWAYS use compound commands:**
+```bash
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm start
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm install
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm run build
+```
+
+## �📋 Overview
 
 This file contains **GitHub Copilot-specific** instructions that extend the generic AI guidance found in the `.ai/` folder. All AI tools should first reference the generic instructions, then apply the Copilot-specific enhancements below.
 
@@ -33,9 +53,18 @@ npm start  # (when in root directory)
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm start    # ✅ Required
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm install  # ✅ Required
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm run build # ✅ Required
+
+# ⚠️ NEVER FORGET: THIS IS THE MOST COMMON MISTAKE - ALWAYS USE COMPOUND COMMANDS
+# ANY npm command MUST use: cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm X
+# Do NOT use separate cd and npm commands - npm creates new processes that reset directory
 ```
 
 **Technical Reason**: The `package.json`, `tsconfig.json`, and all Node.js configurations are located in the `Workload/` subdirectory, not the repository root. Additionally, `npm start` spawns a new process that resets the working directory, so compound commands with absolute paths are essential.
+
+**⚠️ CRITICAL REMINDER FOR COPILOT**: 
+- EVERY npm command requires: `cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm X`
+- NEVER use separate cd and npm commands
+- This is the #1 most common error - compound commands are MANDATORY
 
 ## 🤖 GitHub Copilot Enhanced Features
 
@@ -113,10 +142,16 @@ GitHub Copilot understands context-aware shortcuts:
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm start    # ✅ Required for startup
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm install  # ✅ Required for dependencies
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm run build # ✅ Required for builds
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm test     # ✅ Required for testing
 
 # ❌ NEVER use these patterns - they will fail:
 npm start         # Fails - wrong directory and process reset
 cd Workload; npm start  # Fails - process reset loses directory context
+cd Workload
+npm start         # Fails - npm runs in new process that resets to root
+
+# ⚠️ COPILOT REMINDER: THE PATTERN IS ALWAYS:
+# cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm [COMMAND]
 
 # Smart environment detection with .env-based configuration
 fabric dev start    # Automatically uses .env.dev configuration

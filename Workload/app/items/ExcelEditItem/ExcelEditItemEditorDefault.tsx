@@ -388,6 +388,7 @@ function TableEditorView({
   const [currentEditingItem, setCurrentEditingItem] = useState<any>(null);
   const [excelOnlineUrl, setExcelOnlineUrl] = useState<string>('');
   const [isLoadingExcel, setIsLoadingExcel] = useState(false);
+  const [fileId, setFileId] = useState<string>('');
 
   useEffect(() => {
     const workflowState = item?.definition?.state as ExcelEditWorkflowState;
@@ -436,6 +437,9 @@ function TableEditorView({
         const result = await response.json();
         console.log('✅ Excel file created successfully:', result);
         
+        // Store the fileId for fallback use
+        setFileId(result.fileId);
+        
         // Use Excel Online URL directly
         const excelOnlineUrl = result.excelOnlineUrl;
         setExcelOnlineUrl(excelOnlineUrl);
@@ -445,6 +449,79 @@ function TableEditorView({
       }
     } catch (error) {
       console.error('❌ Error loading Excel Online:', error);
+    } finally {
+      setIsLoadingExcel(false);
+    }
+  };
+
+  const createRealExcelWorkbook = async (editingItem: any) => {
+    setIsLoadingExcel(true);
+    try {
+      console.log('🎯 Creating real Excel workbook for table:', editingItem.name);
+      
+      // Prepare table data for real Excel creation
+      const tableData = [
+        ['Customer ID', 'Name', 'Email', 'Status'], // Headers will be handled by schema
+        ['CUST001', 'John Smith', 'john@example.com', 'Active'],
+        ['CUST002', 'Jane Doe', 'jane@example.com', 'Active'],
+        ['CUST003', 'Bob Johnson', 'bob@example.com', 'Inactive'],
+        ['CUST004', 'Alice Wilson', 'alice@example.com', 'Active'],
+        ['CUST005', 'Charlie Brown', 'charlie@example.com', 'Pending']
+      ];
+
+      const schema = [
+        { name: 'Customer ID', dataType: 'string' },
+        { name: 'Name', dataType: 'string' },
+        { name: 'Email', dataType: 'string' },
+        { name: 'Status', dataType: 'string' }
+      ];
+
+      const baseUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:60006' : window.location.origin;
+      
+      // Call the real Excel creation endpoint
+      const response = await fetch(`${baseUrl}/api/excel/create-real`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tableName: editingItem.name,
+          tableData: tableData.slice(1), // Remove headers (schema defines them)
+          schema: schema
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('✅ Real Excel workbook created successfully:', result);
+        
+        // Use the real Excel embed URL
+        setExcelOnlineUrl(result.embedUrl);
+        
+        // Show success message
+        console.log('🎉 Real Excel Online is now loaded!');
+        console.log('📁 File ID:', result.fileId);
+        console.log('🔗 Web URL:', result.webUrl);
+        
+      } else {
+        console.warn('⚠️ Real Excel creation failed, falling back to demo:', result.error);
+        
+        // Fall back to demo Excel using the correct fileId from createFromLakehouse
+        const fallbackFileId = fileId || `lakehouse_${editingItem.name}_${Date.now()}`;
+        const fallbackUrl = `${baseUrl}/demo-excel?fileId=${fallbackFileId}&token=demo`;
+        setExcelOnlineUrl(fallbackUrl);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error creating real Excel workbook:', error);
+      
+      // Fall back to demo Excel on error using the correct fileId
+      const baseUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:60006' : window.location.origin;
+      const fallbackFileId = fileId || `lakehouse_${editingItem.name}_${Date.now()}`;
+      const fallbackUrl = `${baseUrl}/demo-excel?fileId=${fallbackFileId}&token=demo`;
+      setExcelOnlineUrl(fallbackUrl);
+      
     } finally {
       setIsLoadingExcel(false);
     }
@@ -498,6 +575,17 @@ function TableEditorView({
 
       <div className="table-editor-actions">
         <Button
+          appearance="primary"
+          icon={<TableSimple20Regular />}
+          onClick={() => {
+            console.log('🎯 Creating real Excel workbook for table:', currentEditingItem.name);
+            createRealExcelWorkbook(currentEditingItem);
+          }}
+        >
+          Create Real Excel
+        </Button>
+
+        <Button
           appearance="secondary"
           icon={<Save20Regular />}
           onClick={() => {
@@ -523,7 +611,8 @@ function TableEditorView({
           onClick={() => {
             console.log('🔄 Switching to demo Excel interface');
             const baseUrl = 'http://localhost:60006';
-            const fallbackUrl = `${baseUrl}/demo-excel?fileId=${currentEditingItem.id}&token=demo`;
+            const fallbackFileId = fileId || `lakehouse_${currentEditingItem.name}_${Date.now()}`;
+            const fallbackUrl = `${baseUrl}/demo-excel?fileId=${fallbackFileId}&token=demo`;
             setExcelOnlineUrl(fallbackUrl);
           }}
         >

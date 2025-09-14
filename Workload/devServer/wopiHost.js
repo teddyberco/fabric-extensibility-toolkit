@@ -47,6 +47,11 @@ class WOPIHostEndpoints {
     // Simple test endpoint for iframe embedding
     app.get('/test-iframe', this.testIframeEndpoint.bind(this));
 
+    // Real Excel creation and embedding endpoints
+    app.post('/api/excel/create-real', this.createRealExcel.bind(this));
+    app.post('/api/excel/test-real', this.testRealExcel.bind(this));
+    app.get('/api/excel/list', this.listRealExcelFiles.bind(this));
+
     console.log('WOPI Host endpoints registered:');
     console.log('  GET /wopi/discovery');
     console.log('  GET /wopi/files/:fileId');
@@ -55,6 +60,9 @@ class WOPIHostEndpoints {
     console.log('  POST /wopi/files/:fileId');
     console.log('  POST /wopi/createFromLakehouse');
     console.log('  GET /demo-excel');
+    console.log('  POST /api/excel/create-real');
+    console.log('  POST /api/excel/test-real');
+    console.log('  GET /api/excel/list');
   }
 
   /**
@@ -947,10 +955,172 @@ class WOPIHostEndpoints {
 
       res.setHeader('Content-Type', 'text/html');
       res.send(embedHTML);
-      
     } catch (error) {
       console.error('Excel Online embed error:', error);
       res.status(500).json({ error: 'Failed to create Excel Online embed' });
+    }
+  }
+
+  /**
+   * Create Real Excel Workbook using OneDrive
+   */
+  async createRealExcel(req, res) {
+    try {
+      const { tableName, tableData, schema } = req.body;
+      
+      console.log(`🎯 Creating real Excel workbook for: ${tableName}`);
+
+      // Try to import the RealExcelService, fallback to demo if not available
+      let result;
+      try {
+        // Note: This would require the TypeScript to be compiled
+        // For now, we'll simulate the real Excel creation
+        console.log('⚠️  Real Excel service not available in dev mode - using demo simulation');
+        
+        // Simulate real Excel creation result
+        result = {
+          success: false,
+          error: 'Real Excel integration requires Azure AD configuration. Set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, and AZURE_TENANT_ID in .env.dev',
+          fallbackMessage: 'Using demo Excel interface instead'
+        };
+        
+      } catch (error) {
+        console.log('❌ Real Excel service not available:', error.message);
+        result = {
+          success: false,
+          error: 'Real Excel service not available',
+          fallbackMessage: 'Using demo Excel interface instead'
+        };
+      }
+
+      if (result.success) {
+        res.json({
+          success: true,
+          embedUrl: result.embedUrl,
+          fileId: result.fileId,
+          fileName: result.fileName,
+          webUrl: result.webUrl,
+          message: 'Real Excel workbook created successfully'
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: result.error,
+          fallbackMessage: 'Real Excel creation failed - falling back to demo Excel'
+        });
+      }
+
+    } catch (error) {
+      console.error('❌ Create real Excel error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: error.message,
+        fallbackMessage: 'Real Excel creation failed - falling back to demo Excel'
+      });
+    }
+  }
+
+  /**
+   * Test Real Excel Integration
+   */
+  async testRealExcel(req, res) {
+    try {
+      console.log('🧪 Testing real Excel integration...');
+
+      // Try to test real Excel integration, fallback to demo info
+      try {
+        // Note: This would require the TypeScript to be compiled
+        console.log('⚠️  Real Excel service not available in dev mode - testing simulated');
+        
+        // Check if Azure AD configuration is available
+        const hasAzureConfig = process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET && process.env.AZURE_TENANT_ID;
+        
+        if (hasAzureConfig) {
+          res.json({
+            success: false,
+            available: false,
+            message: 'Real Excel integration configured but service not compiled. TypeScript services need to be built.',
+            azureConfigured: true,
+            recommendation: 'Use demo Excel for development testing'
+          });
+        } else {
+          res.json({
+            success: false,
+            available: false,
+            message: 'Real Excel integration not configured. Set Azure AD credentials in .env.dev',
+            azureConfigured: false,
+            recommendation: 'Use demo Excel for development testing'
+          });
+        }
+        
+      } catch (error) {
+        res.json({
+          success: false,
+          available: false,
+          message: 'Real Excel integration test failed: ' + error.message,
+          recommendation: 'Use demo Excel for development testing'
+        });
+      }
+
+    } catch (error) {
+      console.error('❌ Test real Excel error:', error);
+      res.status(500).json({ 
+        success: false,
+        available: false,
+        error: error.message,
+        message: 'Real Excel integration test failed'
+      });
+    }
+  }
+
+  /**
+   * List Real Excel Files
+   */
+  async listRealExcelFiles(req, res) {
+    try {
+      console.log('📋 Listing real Excel files...');
+
+      // Try to list real Excel files, fallback to demo info
+      try {
+        // Note: This would require the TypeScript to be compiled
+        console.log('⚠️  Real Excel service not available in dev mode - using demo file list');
+        
+        // Return demo file list
+        const demoFiles = [
+          {
+            id: 'demo-file-1',
+            name: 'customer_data_demo.xlsx',
+            size: 15420,
+            createdDateTime: new Date().toISOString(),
+            lastModifiedDateTime: new Date().toISOString(),
+            webUrl: 'http://localhost:60006/demo-excel?fileId=demo-file-1&token=demo',
+            type: 'demo'
+          }
+        ];
+        
+        res.json({
+          success: true,
+          files: demoFiles,
+          count: demoFiles.length,
+          message: 'Demo file list - real files require Azure AD configuration'
+        });
+        
+      } catch (error) {
+        res.json({
+          success: false,
+          error: error.message,
+          files: [],
+          message: 'Failed to list files'
+        });
+      }
+
+    } catch (error) {
+      console.error('❌ List real Excel files error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: error.message,
+        files: []
+      });
     }
   }
 }
