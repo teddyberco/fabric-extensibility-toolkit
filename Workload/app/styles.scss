@@ -1207,3 +1207,252 @@
   background: #f3f2f1;
   border-bottom: 1px solid #e1e1e1;
 }
+
+/* Excel Online Editing Interface */
+.excel-editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 600px;
+  border: 1px solid #e1e1e1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+.excel-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+.excel-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.excel-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.excel-iframe-container {
+  flex: 1;
+  position: relative;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.excel-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: white;
+}
+
+/* Placeholder when Excel iframe isn't available */
+.excel-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  color: #666;
+  background: linear-gradient(45deg, #f8f9fa 25%, transparent 25%), 
+              linear-gradient(-45deg, #f8f9fa 25%, transparent 25%), 
+              linear-gradient(45deg, transparent 75%, #f8f9fa 75%), 
+              linear-gradient(-45deg, transparent 75%, #f8f9fa 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+.excel-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: #e1e1e1;
+  border: 1px solid #ccc;
+  margin: 20px;
+  max-width: 400px;
+}
+
+.excel-cell {
+  background: white;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: none;
+}
+
+.excel-cell.header {
+  background: #f0f0f0;
+  font-weight: 600;
+}
+
+/* Table Editor View - White Canvas Design */
+.table-editor-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.table-editor-iframe-container {
+  height: calc(100vh - 200px);
+  border: 1px solid #d1d1d1;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: white;
+}
+
+.table-editor-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.error-state {
+  text-align: center;
+  color: #8a8886;
+}
+
+.error-retry {
+  margin-top: 16px;
+}
+
+/* Clean White Table Editor Design */
+.table-editor-canvas {
+  background: white;
+  min-height: 100vh;
+  padding: 24px;
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.table-editor-header-clean {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f3f2f1;
+}
+
+.table-editor-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.table-editor-iframe-container-clean {
+  height: calc(100vh - 180px);
+  border: 1px solid #e1e1e1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Canvas Items Layout */
+.canvas-items-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.canvas-item-card {
+  min-height: 80px;
+  padding: 16px;
+  border: 2px solid #0078d4;
+  border-radius: 8px;
+  background-color: #f3f2f1;
+  margin-bottom: 8px;
+}
+
+.canvas-item-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.canvas-item-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.canvas-item-title {
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.canvas-item-subtitle {
+  font-size: 14px;
+  color: #605e5c;
+}
+
+.canvas-item-button {
+  background-color: #0078d4;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Excel Canvas - Clean White Design */
+.excel-canvas {
+  background: white;
+  min-height: 100vh;
+  padding: 24px;
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.canvas-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f3f2f1;
+}
+
+.canvas-actions {
+  margin-bottom: 24px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.loading-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 40px;
+  color: #666;
+}
+
+.empty-canvas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #8a8886;
+  text-align: center;
+  min-height: 300px;
+}
+
+.empty-canvas > * {
+  margin-bottom: 12px;
+}
+
+.empty-canvas > *:last-child {
+  margin-bottom: 0;
+}

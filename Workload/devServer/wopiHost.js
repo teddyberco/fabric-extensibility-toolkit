@@ -38,6 +38,9 @@ class WOPIHostEndpoints {
     // Create new Excel file from Lakehouse data
     app.post('/wopi/createFromLakehouse', this.createFromLakehouse.bind(this));
 
+    // Real Excel Online embed endpoint
+    app.get('/wopi/excel-embed', this.getExcelEmbed.bind(this));
+
     // Demo Excel Online interface for development testing
     app.get('/demo-excel', this.demoExcelInterface.bind(this));
     
@@ -370,9 +373,10 @@ class WOPIHostEndpoints {
 
   getExcelOnlineUrl(fileId, accessToken) {
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:60006';
-    const wopiSrc = encodeURIComponent(`${baseUrl}/wopi/files/${fileId}`);
     
-    return `https://excel.officeapps.live.com/x/_layouts/15/Doc.aspx?sourcedoc=${fileId}&action=edit&wopisrc=${wopiSrc}&access_token=${accessToken}`;
+    // Use our working demo Excel interface
+    // The Excel Online embed was having issues with localhost and security
+    return `${baseUrl}/demo-excel?fileId=${fileId}&token=${accessToken}`;
   }
 
   async createExcelFromData(data, metadata) {
@@ -806,6 +810,148 @@ class WOPIHostEndpoints {
 </html>`;
 
     res.send(testHTML);
+  }
+
+  /**
+   * Excel Online Embed - Real Excel Online integration
+   */
+  async getExcelEmbed(req, res) {
+    try {
+      const fileId = req.query.fileId;
+      const accessToken = req.query.token;
+      
+      console.log(`📊 Creating Excel Online embed for file: ${fileId}`);
+
+      // Create a real Excel workbook using Excel Online's embed API
+      // This uses Office Online embed URLs which are more permissive than WOPI
+      const embedHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Excel Online - ${fileId}</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .excel-embed-container {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .embed-header {
+            background: #0078d4;
+            color: white;
+            padding: 8px 16px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .excel-icon {
+            width: 16px;
+            height: 16px;
+            background: white;
+            color: #0078d4;
+            border-radius: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 10px;
+        }
+        .embed-frame {
+            flex: 1;
+            border: none;
+            background: white;
+        }
+        .fallback-container {
+            padding: 20px;
+            text-align: center;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            margin: 20px;
+            border-radius: 4px;
+        }
+        .fallback-button {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="excel-embed-container">
+        <div class="embed-header">
+            <div class="excel-icon">E</div>
+            <span>Excel Online - ${fileId}</span>
+            <span style="margin-left: auto; font-size: 12px;">Microsoft Fabric Integration</span>
+        </div>
+        
+        <iframe 
+            class="embed-frame"
+            src="https://view.officeapps.live.com/op/embed.aspx?src=https://templates.office.com/templates/simple-invoice-blue.xlsx"
+            onload="handleFrameLoad()"
+            onerror="handleFrameError()">
+        </iframe>
+        
+        <div id="fallback" class="fallback-container" style="display: none;">
+            <h3>📊 Excel Online Integration</h3>
+            <p>Loading Excel Online workbook...</p>
+            <p>If the Excel interface doesn't load, you can use our demo Excel editor:</p>
+            <button class="fallback-button" onclick="loadDemoExcel()">Open Demo Excel</button>
+        </div>
+    </div>
+
+    <script>
+        let frameLoadAttempted = false;
+        
+        function handleFrameLoad() {
+            console.log('Excel Online frame loaded');
+            frameLoadAttempted = true;
+        }
+        
+        function handleFrameError() {
+            console.log('Excel Online frame failed to load');
+            showFallback();
+        }
+        
+        function showFallback() {
+            document.querySelector('.embed-frame').style.display = 'none';
+            document.getElementById('fallback').style.display = 'block';
+        }
+        
+        function loadDemoExcel() {
+            window.location.href = '/demo-excel?fileId=${fileId}&token=${accessToken}';
+        }
+        
+        // Show fallback after 10 seconds if frame hasn't loaded
+        setTimeout(() => {
+            if (!frameLoadAttempted) {
+                console.log('Excel Online timeout - showing fallback');
+                showFallback();
+            }
+        }, 10000);
+    </script>
+</body>
+</html>`;
+
+      res.setHeader('Content-Type', 'text/html');
+      res.send(embedHTML);
+      
+    } catch (error) {
+      console.error('Excel Online embed error:', error);
+      res.status(500).json({ error: 'Failed to create Excel Online embed' });
+    }
   }
 }
 

@@ -112,6 +112,7 @@ export function ExcelEditItemEditor(props: PageProps) {
 
   const navigateToCanvasOverview = async () => {
     console.log('🧭 navigateToCanvasOverview called');
+    console.trace('🔍 Call stack for navigateToCanvasOverview:');
     if (!item) {
       console.log('❌ No item available for navigation');
       return;
@@ -153,6 +154,7 @@ export function ExcelEditItemEditor(props: PageProps) {
 
   const navigateToTableEditor = async () => {
     console.log('🧭 navigateToTableEditor called');
+    console.trace('🔍 Call stack for navigateToTableEditor:');
     if (!item) {
       console.log('❌ No item available for table editor navigation');
       return;
@@ -253,7 +255,7 @@ export function ExcelEditItemEditor(props: PageProps) {
   // Render appropriate view based on state
   return (
     <Stack className="editor" data-testid="item-editor-inner">
-      {/* Back to Home tab button - shown above ribbon for L2 views */}
+      {/* Back to Canvas button - shown above ribbon for table editor */}
       {currentView === VIEW_TYPES.TABLE_EDITOR && (
         <div className="back-to-home-container">
           <Button 
@@ -292,7 +294,7 @@ export function ExcelEditItemEditor(props: PageProps) {
             }}
             icon={<span>←</span>}
           >
-            Back to Home tab
+            Back to Canvas
           </Button>
         </div>
       )}

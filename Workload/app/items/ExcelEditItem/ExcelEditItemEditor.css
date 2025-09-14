@@ -166,3 +166,118 @@
 .overview-item-description {
   color: #666;
 }
+
+/* Back to Canvas Button - positioned above ribbon */
+.back-to-home-container {
+  padding: 12px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #edebe9;
+  display: flex;
+  align-items: center;
+}
+
+.back-to-home-container button {
+  font-size: 14px;
+  font-weight: 400;
+  color: #323130;
+  padding: 6px 12px;
+  border-radius: 4px;
+  transition: background-color 0.1s ease;
+}
+
+.back-to-home-container button:hover {
+  background-color: #f3f2f1;
+}
+
+.back-to-home-container button span {
+  margin-right: 8px;
+  font-size: 16px;
+}
+
+/* Table Editor Header Content */
+.table-editor-header-clean {
+  padding: 20px 24px;
+  background: #ffffff;
+  border-bottom: 1px solid #edebe9;
+  margin: 0;
+}
+
+.header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+
+.table-title {
+  color: #323130 !important;
+  font-size: 28px !important;
+  font-weight: 600 !important;
+  line-height: 36px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.table-subtitle {
+  color: #605e5c !important;
+  font-size: 16px !important;
+  font-weight: 400 !important;
+  line-height: 22px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+/* Table Editor Actions */
+.table-editor-actions {
+  padding: 16px 24px;
+  background: #ffffff;
+  border-bottom: 1px solid #edebe9;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.table-editor-actions button {
+  margin: 0;
+  border-radius: 4px;
+}
+
+/* Clean up any unwanted lines or borders */
+.canvas-header * {
+  box-sizing: border-box;
+}
+
+.excel-canvas {
+  background: #ffffff;
+}
+
+.excel-canvas * {
+  box-sizing: border-box;
+}
+
+/* Override Fluent UI Text component styles to remove any unwanted borders/lines */
+.table-title span,
+.table-subtitle span {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  text-decoration: none !important;
+}
+
+/* Remove any focus outlines that might appear as lines */
+.table-editor-header-clean *:focus {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Ensure consistent spacing */
+.table-editor-header-clean > * {
+  margin: 0 !important;
+  padding: 0 !important;
+}

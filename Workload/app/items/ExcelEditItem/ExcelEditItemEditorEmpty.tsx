@@ -57,7 +57,7 @@ export function ExcelEditItemEditorEmpty({
           // Create lakehouse and table info
           const lakehouseInfo = {
             id: result.id,
-            name: result.displayName,
+            name: result.displayName || 'Selected Lakehouse',
             workspaceId: result.workspaceId
           };
           
@@ -67,30 +67,62 @@ export function ExcelEditItemEditorEmpty({
             schema: [] as Array<{ name: string; dataType: string }>, // Will be populated later
             rowCount: 0 // Will be populated later
           };
+
+          // Create canvas item for the selected table
+          const canvasItem = {
+            id: `${lakehouseInfo.name}-${tableName}`,
+            type: 'lakehouse-table' as const,
+            name: tableName,
+            displayName: tableName,
+            source: {
+              lakehouse: lakehouseInfo,
+              table: tableInfo
+            },
+            lastEdited: new Date().toISOString()
+          };
           
-          // Save complete selection to state
+          // Save complete selection to state with canvas items
           const updatedState: ExcelEditWorkflowState = {
             ...createEmptyWorkflowState(),
+            canvasItems: [canvasItem], // Add the table to canvas items!
             selectedLakehouse: lakehouseInfo,
             selectedTable: tableInfo,
             workflowStep: 'canvas-overview',
           };
           
+          console.log('🎨 Creating canvas item:', canvasItem);
+          console.log('📋 Saving state with canvas items:', updatedState);
+          
           // Save state to Fabric SDK
-          await saveItemDefinition<ExcelEditItemDefinition>(
-            workloadClient,
-            item!.id,
-            { state: updatedState }
-          );
-          
-          console.log('✅ Table selection saved to Fabric SDK');
-          console.log('⏳ Waiting brief moment for state propagation...');
-          
-          // Give the state a moment to propagate before navigating
-          setTimeout(() => {
-            console.log('🧭 Navigating to canvas overview...');
-            onNavigateToCanvasOverview();
-          }, 200);
+          try {
+            const saveResult = await saveItemDefinition<ExcelEditItemDefinition>(
+              workloadClient,
+              item!.id,
+              { state: updatedState }
+            );
+            
+            if (saveResult) {
+              console.log('✅ Table selection saved to Fabric SDK successfully');
+              console.log('⏳ Waiting brief moment for state propagation...');
+              
+              // Give the state a moment to propagate before navigating
+              setTimeout(() => {
+                console.log('🧭 Navigating to canvas overview...');
+                onNavigateToCanvasOverview();
+              }, 200);
+            } else {
+              console.error('❌ Save result was undefined - check console for errors');
+              console.error('❌ Attempted to save state:', updatedState);
+            }
+          } catch (saveError) {
+            console.error('❌ Error saving table selection to Fabric SDK:', saveError);
+            console.error('❌ Save error details:', {
+              message: saveError.message,
+              stack: saveError.stack,
+              name: saveError.name
+            });
+            console.error('❌ Failed to save state:', updatedState);
+          }
           
         } else {
           // Only lakehouse selected, no table
