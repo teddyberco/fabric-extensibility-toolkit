@@ -8,7 +8,7 @@ import { ItemWithDefinition, getWorkloadItem, callGetItem, saveItemDefinition, c
 import { callOpenSettings } from "../../controller/SettingsController";
 import { callNotificationOpen } from "../../controller/NotificationController";
 import { ItemEditorLoadingProgressBar } from "../../controls/ItemEditorLoadingProgressBar";
-import { ExcelEditItemDefinition, VIEW_TYPES, CurrentView, ExcelEditWorkflowState, isWorkflowStateValid, shouldShowCanvasOverview, shouldShowTableEditor, createEmptyWorkflowState } from "./ExcelEditItemModel";
+import { ExcelEditItemDefinition, VIEW_TYPES, CurrentView, ExcelEditWorkflowState, isWorkflowStateValid, createEmptyWorkflowState } from "./ExcelEditItemModel";
 import { ExcelEditItemEditorEmpty } from "./ExcelEditItemEditorEmpty";
 import { ExcelEditItemEditorDefault } from "./ExcelEditItemEditorDefault";
 import "../../styles.scss";
@@ -60,18 +60,11 @@ export function ExcelEditItemEditor(props: PageProps) {
           // No valid state - show empty view to start workflow
           setCurrentView(VIEW_TYPES.EMPTY);
           console.log('📍 No valid state found - showing empty view');
-        } else if (shouldShowTableEditor(workflowState)) {
-          // Valid state with current editing item - go to table editor (L2)
-          setCurrentView(VIEW_TYPES.TABLE_EDITOR);
-          console.log('📍 Valid state with editing item - showing table editor (L2)');
-        } else if (shouldShowCanvasOverview(workflowState)) {
-          // Valid state with canvas items - show canvas overview (L1)
-          setCurrentView(VIEW_TYPES.CANVAS_OVERVIEW);
-          console.log('📍 Valid state with canvas items - showing canvas overview (L1)');
         } else {
-          // Fallback to canvas overview
+          // Always default to canvas overview unless explicitly in active editing
+          // This ensures the user sees the table list by default after reopening
           setCurrentView(VIEW_TYPES.CANVAS_OVERVIEW);
-          console.log('📍 Fallback - showing canvas overview');
+          console.log('📍 Defaulting to canvas overview (table list)');
         }
 
       } catch (error) {
@@ -91,23 +84,24 @@ export function ExcelEditItemEditor(props: PageProps) {
     loadDataFromUrl(pageContext, pathname);
   }, [pageContext, pathname]);
 
-  // Determine current view based on item state
+  // Determine current view based on item state - only for initial load
   useEffect(() => {
+    console.log('🔄 useEffect: Determining view based on item state:', item?.definition?.state);
+    
     if (!item?.definition?.state) {
+      console.log('📍 useEffect: No state - showing empty view');
       setCurrentView(VIEW_TYPES.EMPTY);
       return;
     }
 
-    const workflowState = item.definition.state as ExcelEditWorkflowState;
-    
-    if (shouldShowTableEditor(workflowState)) {
-      setCurrentView(VIEW_TYPES.TABLE_EDITOR);
-    } else if (shouldShowCanvasOverview(workflowState)) {
+    // Only set view on initial load, don't override explicit navigation
+    if (currentView === VIEW_TYPES.EMPTY || !currentView) {
+      console.log('📍 useEffect: Initial load - defaulting to canvas overview (table list)');
       setCurrentView(VIEW_TYPES.CANVAS_OVERVIEW);
     } else {
-      setCurrentView(VIEW_TYPES.EMPTY);
+      console.log('📍 useEffect: View already set, not overriding:', currentView);
     }
-  }, [item?.definition?.state]);
+  }, [item?.definition?.state, currentView]);
 
 
   const navigateToCanvasOverview = async () => {
@@ -261,6 +255,8 @@ export function ExcelEditItemEditor(props: PageProps) {
           <Button 
             appearance="subtle" 
             onClick={async () => {
+              console.log('🏠 Back to Canvas clicked - clearing editing state');
+              
               // Clear current editing context when going back
               const currentState = item?.definition?.state as ExcelEditWorkflowState;
               if (currentState && item) {
@@ -269,6 +265,11 @@ export function ExcelEditItemEditor(props: PageProps) {
                   currentEditingItem: undefined,
                   workflowStep: 'canvas-overview'
                 };
+                
+                console.log('🧹 Clearing editing state:', { 
+                  currentEditingItem: updatedState.currentEditingItem, 
+                  workflowStep: updatedState.workflowStep 
+                });
 
                 try {
                   await saveItemDefinition<ExcelEditItemDefinition>(
@@ -276,6 +277,8 @@ export function ExcelEditItemEditor(props: PageProps) {
                     item.id,
                     { state: updatedState }
                   );
+                  
+                  console.log('✅ Editing state cleared and saved');
                   
                   // Update local state
                   setItem({
@@ -286,10 +289,11 @@ export function ExcelEditItemEditor(props: PageProps) {
                     }
                   });
                 } catch (error) {
-                  console.error('Failed to clear editing context:', error);
+                  console.error('❌ Failed to clear editing context:', error);
                 }
               }
               
+              // Navigate to canvas overview
               navigateToCanvasOverview();
             }}
             icon={<span>←</span>}

@@ -466,8 +466,33 @@ function TableEditorView({
     <div className="excel-canvas"> {/* Clean white canvas design */}
       <div className="table-editor-header-clean">
         <div className="header-content">
-          <Text size={600} weight="bold" className="table-title">{currentEditingItem.displayName}</Text>
-          <Text size={400} className="table-subtitle">Excel editing interface - Changes sync to lakehouse</Text>
+          <Text 
+            size={600} 
+            weight="bold" 
+            className="table-title"
+            style={{ 
+              margin: 0, 
+              padding: 0, 
+              textAlign: 'left',
+              display: 'block',
+              width: '100%'
+            }}
+          >
+            {currentEditingItem.displayName}
+          </Text>
+          <Text 
+            size={400} 
+            className="table-subtitle"
+            style={{ 
+              margin: 0, 
+              padding: 0, 
+              textAlign: 'left',
+              display: 'block',
+              width: '100%'
+            }}
+          >
+            Excel editing interface - Changes sync to lakehouse
+          </Text>
         </div>
       </div>
 

@@ -200,6 +200,7 @@
   background: #ffffff;
   border-bottom: 1px solid #edebe9;
   margin: 0;
+  text-align: left !important;
 }
 
 .header-content {
@@ -208,6 +209,10 @@
   gap: 6px;
   margin: 0;
   padding: 0;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  width: 100% !important;
 }
 
 .table-title {
@@ -219,6 +224,11 @@
   padding: 0 !important;
   border: none !important;
   background: transparent !important;
+  text-align: left !important;
+  display: block !important;
+  width: 100% !important;
+  position: relative !important;
+  left: 0 !important;
 }
 
 .table-subtitle {
@@ -230,6 +240,11 @@
   padding: 0 !important;
   border: none !important;
   background: transparent !important;
+  text-align: left !important;
+  display: block !important;
+  width: 100% !important;
+  position: relative !important;
+  left: 0 !important;
 }
 
 /* Table Editor Actions */
@@ -267,6 +282,24 @@
   box-shadow: none !important;
   outline: none !important;
   text-decoration: none !important;
+  text-align: left !important;
+  display: inline-block !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  position: relative !important;
+  left: 0 !important;
+}
+
+/* Ensure both title and subtitle Text components have identical positioning */
+.table-title > *,
+.table-subtitle > * {
+  margin: 0 !important;
+  padding: 0 !important;
+  text-align: left !important;
+  position: relative !important;
+  left: 0 !important;
+  text-indent: 0 !important;
 }
 
 /* Remove any focus outlines that might appear as lines */
@@ -276,8 +309,67 @@
   box-shadow: none !important;
 }
 
-/* Ensure consistent spacing */
-.table-editor-header-clean > * {
+/* Ensure consistent spacing and alignment */
+.table-editor-header-clean > *,
+.table-editor-header-clean div,
+.header-content > * {
+  text-align: left !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
   margin: 0 !important;
   padding: 0 !important;
+}
+
+/* Specific targeting for the Excel editor header path */
+.excel-canvas .table-editor-header-clean > div {
+  text-align: left !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  width: 100% !important;
+}
+
+/* Ensure all text content in the header is left-aligned */
+.excel-canvas .table-editor-header-clean * {
+  text-align: left !important;
+}
+
+/* Force exact alignment for both title and subtitle */
+.table-editor-header-clean .table-title,
+.table-editor-header-clean .table-subtitle {
+  margin-left: 0 !important;
+  padding-left: 0 !important;
+  text-indent: 0 !important;
+  position: relative !important;
+  left: 0 !important;
+}
+
+/* Ensure Fluent UI Text components have consistent positioning */
+.table-editor-header-clean [class*="fui-Text"] {
+  margin: 0 !important;
+  padding: 0 !important;
+  text-align: left !important;
+  position: relative !important;
+  left: 0 !important;
+}
+
+/* Target all possible internal elements of Fluent UI Text components */
+.table-title *,
+.table-subtitle * {
+  margin: 0 !important;
+  padding: 0 !important;
+  text-align: left !important;
+  text-indent: 0 !important;
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+}
+
+/* Override any default Fluent UI typography margins/padding */
+.header-content [role="text"],
+.header-content [class*="ms-"],
+.header-content [class*="fui-"] {
+  margin: 0 !important;
+  padding: 0 !important;
+  text-align: left !important;
 }
