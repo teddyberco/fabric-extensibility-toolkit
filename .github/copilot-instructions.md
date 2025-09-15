@@ -1,6 +1,6 @@
 # GitHub Copilot Instructions for Microsoft Fabric Extensibility Toolkit
 
-## � CRITICAL: npm Command Pattern
+## ⚠️ CRITICAL: npm Command Pattern
 
 **⚠️ MANDATORY FOR ALL npm COMMANDS:**
 ```bash
@@ -20,7 +20,7 @@ cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm install
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm run build
 ```
 
-## �📋 Overview
+## 📋 Overview
 
 This file contains **GitHub Copilot-specific** instructions that extend the generic AI guidance found in the `.ai/` folder. All AI tools should first reference the generic instructions, then apply the Copilot-specific enhancements below.
 
@@ -79,10 +79,10 @@ Use `@fabric` or these keywords for specialized GitHub Copilot assistance:
 ### Enhanced Capabilities
 GitHub Copilot provides additional features beyond generic AI tools:
 - 🔮 **Predictive Coding**: Auto-completion for Fabric patterns and TypeScript interfaces
-- � **Context-Aware Suggestions**: Smart suggestions based on current file and cursor position
+- 🔍 **Context-Aware Suggestions**: Smart suggestions based on current file and cursor position
 - ⚡ **Real-time Validation**: Immediate feedback on code quality and Fabric compliance
-- � **Pattern Recognition**: Learns from existing codebase patterns for consistent suggestions
-- � **Inline Documentation**: Generates JSDoc comments following Fabric conventions
+- 🎯 **Pattern Recognition**: Learns from existing codebase patterns for consistent suggestions
+- 📝 **Inline Documentation**: Generates JSDoc comments following Fabric conventions
 
 ## 🎯 GitHub Copilot Integration
 
@@ -180,7 +180,7 @@ GitHub Copilot recognizes Fabric patterns and suggests:
 
 ---
 
-## � Reference Architecture
+## 📚 Reference Architecture
 
 For complete understanding, GitHub Copilot users should reference:
 - **Generic Foundation**: All files in `.ai/context/` and `.ai/commands/`
