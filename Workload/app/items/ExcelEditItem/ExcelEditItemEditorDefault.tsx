@@ -2,21 +2,18 @@ import React, { useState, useEffect } from "react";
 import {
   Button,
   Text,
-  MessageBar,
-  MessageBarBody,
   Spinner,
 } from "@fluentui/react-components";
 import {
   DatabaseSearch20Regular,
   TableSimple20Regular,
   Add20Regular,
-  Save20Regular,
-  ArrowSync20Regular,
 } from "@fluentui/react-icons";
 import { WorkloadClientAPI } from "@ms-fabric/workload-client";
 import { ItemWithDefinition, saveItemDefinition } from "../../controller/ItemCRUDController";
 import { callDatahubWizardOpen } from "../../controller/DataHubController";
 import { ExcelEditItemDefinition, ExcelEditWorkflowState, CurrentView, VIEW_TYPES } from "./ExcelEditItemModel";
+import { LocalExcelViewer } from "../../components/items/ExcelEditItem/LocalExcelViewer";
 import "../../styles.scss";
 
 interface CanvasItem {
@@ -388,7 +385,8 @@ function TableEditorView({
   const [currentEditingItem, setCurrentEditingItem] = useState<any>(null);
   const [excelOnlineUrl, setExcelOnlineUrl] = useState<string>('');
   const [isLoadingExcel, setIsLoadingExcel] = useState(false);
-  const [fileId, setFileId] = useState<string>('');
+  const [excelFileInfo, setExcelFileInfo] = useState<{fileId: string, fileName: string, tableName: string} | null>(null);
+  const [showLocalViewer, setShowLocalViewer] = useState(false);
 
   useEffect(() => {
     const workflowState = item?.definition?.state as ExcelEditWorkflowState;
@@ -407,48 +405,13 @@ function TableEditorView({
   const loadExcelOnline = async (editingItem: any) => {
     setIsLoadingExcel(true);
     try {
-      console.log('🚀 Loading Excel Online for table:', editingItem.name);
+      console.log('🚀 Creating local Excel file for table:', editingItem.name);
       
-      // Use your existing WOPIHostService to generate Excel Online URL
-      const baseUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:60006' : window.location.origin;
+      // Create Excel file using our real Excel creation endpoint
+      await createRealExcelWorkbook(editingItem);
       
-      // Create file from lakehouse table data (this calls your existing WOPI service)
-      const response = await fetch(`${baseUrl}/wopi/createFromLakehouse`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tableName: editingItem.name,
-          data: [
-            ['Customer ID', 'Name', 'Email', 'Status'], // Headers
-            ['CUST001', 'John Smith', 'john@example.com', 'Active'],
-            ['CUST002', 'Jane Doe', 'jane@example.com', 'Active'],
-            ['CUST003', 'Bob Johnson', 'bob@example.com', 'Inactive'],
-          ],
-          metadata: {
-            lakehouseId: editingItem.id,
-            tableName: editingItem.name
-          }
-        })
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        console.log('✅ Excel file created successfully:', result);
-        
-        // Store the fileId for fallback use
-        setFileId(result.fileId);
-        
-        // Use Excel Online URL directly
-        const excelOnlineUrl = result.excelOnlineUrl;
-        setExcelOnlineUrl(excelOnlineUrl);
-        
-      } else {
-        console.error('❌ Failed to create Excel file:', response.statusText);
-      }
     } catch (error) {
-      console.error('❌ Error loading Excel Online:', error);
+      console.error('❌ Error creating local Excel file:', error);
     } finally {
       setIsLoadingExcel(false);
     }
@@ -496,19 +459,27 @@ function TableEditorView({
       if (result.success) {
         console.log('✅ Real Excel workbook created successfully:', result);
         
-        // Use the real Excel embed URL
-        setExcelOnlineUrl(result.embedUrl);
+        // Set up local Excel viewer instead of Excel Online
+        setExcelFileInfo({
+          fileId: result.fileId,
+          fileName: result.fileName || `${editingItem.name}.xlsx`,
+          tableName: editingItem.name
+        });
+        setShowLocalViewer(true);
+        
+        // Clear the Excel Online URL since we're using local viewer
+        setExcelOnlineUrl('');
         
         // Show success message
-        console.log('🎉 Real Excel Online is now loaded!');
+        console.log('🎉 Local Excel Viewer is now ready!');
         console.log('📁 File ID:', result.fileId);
-        console.log('🔗 Web URL:', result.webUrl);
+        console.log('� Using local Excel viewer instead of Online Excel');
         
       } else {
-        console.warn('⚠️ Real Excel creation failed, falling back to demo:', result.error);
+        console.error('❌ Failed to create real Excel workbook:', result.error || 'Unknown error');
         
-        // Fall back to demo Excel using the correct fileId from createFromLakehouse
-        const fallbackFileId = fileId || `lakehouse_${editingItem.name}_${Date.now()}`;
+        // Fall back to demo Excel using a generated fileId
+        const fallbackFileId = `lakehouse_${editingItem.name}_${Date.now()}`;
         const fallbackUrl = `${baseUrl}/demo-excel?fileId=${fallbackFileId}&token=demo`;
         setExcelOnlineUrl(fallbackUrl);
       }
@@ -516,9 +487,9 @@ function TableEditorView({
     } catch (error) {
       console.error('❌ Error creating real Excel workbook:', error);
       
-      // Fall back to demo Excel on error using the correct fileId
+      // Fall back to demo Excel on error using a generated fileId
       const baseUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:60006' : window.location.origin;
-      const fallbackFileId = fileId || `lakehouse_${editingItem.name}_${Date.now()}`;
+      const fallbackFileId = `lakehouse_${editingItem.name}_${Date.now()}`;
       const fallbackUrl = `${baseUrl}/demo-excel?fileId=${fallbackFileId}&token=demo`;
       setExcelOnlineUrl(fallbackUrl);
       
@@ -530,11 +501,10 @@ function TableEditorView({
   if (!currentEditingItem) {
     return (
       <div className="excel-canvas">
-        <MessageBar intent="warning">
-          <MessageBarBody>
-            <Text>No table selected for editing. Please return to the canvas and select a table.</Text>
-          </MessageBarBody>
-        </MessageBar>
+        <div className="error-state">
+          <Text size={500} weight="semibold">No table selected for editing</Text>
+          <Text size={400}>Please return to the canvas and select a table.</Text>
+        </div>
       </div>
     );
   }
@@ -587,7 +557,7 @@ function TableEditorView({
 
         <Button
           appearance="secondary"
-          icon={<Save20Regular />}
+          icon={<Add20Regular />}
           onClick={() => {
             console.log('💾 Saving changes to lakehouse for table:', currentEditingItem.name);
           }}
@@ -597,7 +567,7 @@ function TableEditorView({
         
         <Button
           appearance="secondary"
-          icon={<ArrowSync20Regular />}
+          icon={<Add20Regular />}
           onClick={() => {
             console.log('🔄 Refreshing data from lakehouse for table:', currentEditingItem.name);
             loadExcelOnline(currentEditingItem);
@@ -611,7 +581,7 @@ function TableEditorView({
           onClick={() => {
             console.log('🔄 Switching to demo Excel interface');
             const baseUrl = 'http://localhost:60006';
-            const fallbackFileId = fileId || `lakehouse_${currentEditingItem.name}_${Date.now()}`;
+            const fallbackFileId = `lakehouse_${currentEditingItem.name}_${Date.now()}`;
             const fallbackUrl = `${baseUrl}/demo-excel?fileId=${fallbackFileId}&token=demo`;
             setExcelOnlineUrl(fallbackUrl);
           }}
@@ -623,11 +593,26 @@ function TableEditorView({
       {isLoadingExcel && (
         <div className="loading-section">
           <Spinner size="medium" />
-          <Text>Loading Excel Online...</Text>
+          <Text>Creating Excel file...</Text>
         </div>
       )}
 
-      {!isLoadingExcel && excelOnlineUrl && (
+      {!isLoadingExcel && showLocalViewer && excelFileInfo && (
+        <LocalExcelViewer
+          fileId={excelFileInfo.fileId}
+          fileName={excelFileInfo.fileName}
+          tableName={excelFileInfo.tableName}
+          onClose={() => {
+            setShowLocalViewer(false);
+            setExcelFileInfo(null);
+            if (onNavigateToCanvasOverview) {
+              onNavigateToCanvasOverview();
+            }
+          }}
+        />
+      )}
+
+      {!isLoadingExcel && !showLocalViewer && excelOnlineUrl && (
         <div className="table-editor-iframe-container-clean">
           <iframe
             src={excelOnlineUrl}
@@ -642,7 +627,7 @@ function TableEditorView({
         </div>
       )}
 
-      {!isLoadingExcel && !excelOnlineUrl && (
+      {!isLoadingExcel && !showLocalViewer && !excelOnlineUrl && (
         <div className="empty-canvas">
           <div className="error-state">
             <Text size={500} weight="semibold">Unable to load Excel Online</Text>

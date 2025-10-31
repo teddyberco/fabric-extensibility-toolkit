@@ -25,6 +25,7 @@
             "action": "getItemSettings"
       }
     },
+    "itemJobTypes": ["getData", "storeData"],
     "editorTab": {
       "onDeactivate": "item.tab.onDeactivate",
       "canDeactivate": "item.tab.canDeactivate",

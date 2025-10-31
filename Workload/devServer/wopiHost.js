@@ -6,12 +6,49 @@
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
+const { ConfidentialClientApplication } = require('@azure/msal-node');
 
 class WOPIHostEndpoints {
   constructor() {
     this.fileStorage = new Map(); // In-memory storage for demo
     this.fileMetadata = new Map();
+    this.fileContents = new Map(); // Store actual file contents for WOPI serving
     this.fileLocks = new Map();
+    this.pkceStorage = new Map(); // Store PKCE code verifiers for OAuth sessions
+  }
+
+  /**
+   * Generate PKCE code verifier and challenge for OAuth security
+   */
+  generatePKCE() {
+    // Generate a random code verifier (43-128 characters)
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    
+    // Create code challenge by SHA256 hashing the verifier and base64url encoding
+    const codeChallenge = crypto
+      .createHash('sha256')
+      .update(codeVerifier)
+      .digest('base64url');
+    
+    return {
+      codeVerifier,
+      codeChallenge
+    };
+  }
+
+  /**
+   * Clean up expired PKCE sessions (older than 10 minutes)
+   */
+  cleanupExpiredPKCESessions() {
+    const now = Date.now();
+    const tenMinutes = 10 * 60 * 1000;
+    
+    for (const [sessionId, session] of this.pkceStorage.entries()) {
+      if (now - session.timestamp > tenMinutes) {
+        console.log('🧹 Cleaning up expired PKCE session:', sessionId);
+        this.pkceStorage.delete(sessionId);
+      }
+    }
   }
 
   /**
@@ -51,6 +88,10 @@ class WOPIHostEndpoints {
     app.post('/api/excel/create-real', this.createRealExcel.bind(this));
     app.post('/api/excel/test-real', this.testRealExcel.bind(this));
     app.get('/api/excel/list', this.listRealExcelFiles.bind(this));
+    app.get('/api/excel/view/:fileId', this.getExcelDataForViewer.bind(this));
+
+    // OAuth callback endpoint for delegated permissions
+    app.get('/auth/callback', this.handleOAuthCallback.bind(this));
 
     console.log('WOPI Host endpoints registered:');
     console.log('  GET /wopi/discovery');
@@ -63,6 +104,8 @@ class WOPIHostEndpoints {
     console.log('  POST /api/excel/create-real');
     console.log('  POST /api/excel/test-real');
     console.log('  GET /api/excel/list');
+    console.log('  GET /api/excel/view/:fileId');
+    console.log('  GET /auth/callback');
   }
 
   /**
@@ -87,13 +130,13 @@ class WOPIHostEndpoints {
                     "name": "view",
                     "ext": "xlsx",
                     "requires": "containers,update",
-                    "urlsrc": "https://excel.officeapps.live.com/x/_layouts/15/Doc.aspx?sourcedoc=<ui=UI_LLCC>&action=view&wopisrc=<ws=WopiSrc>&access_token=<at>"
+                    "urlsrc": "https://excel.officeapps.live.com/x/_layouts/xlviewerinternal.aspx?ui=<ui=UI_LLCC>&rs=<rs=DC_LLCC>&WOPISrc=<WopiSrc>&access_token=<access_token>"
                   },
                   {
                     "name": "edit",
                     "ext": "xlsx", 
                     "requires": "containers,update",
-                    "urlsrc": "https://excel.officeapps.live.com/x/_layouts/15/Doc.aspx?sourcedoc=<ui=UI_LLCC>&action=edit&wopisrc=<ws=WopiSrc>&access_token=<at>"
+                    "urlsrc": "https://excel.officeapps.live.com/x/_layouts/xlviewerinternal.aspx?ui=<ui=UI_LLCC>&rs=<rs=DC_LLCC>&WOPISrc=<WopiSrc>&access_token=<access_token>"
                   }
                 ]
               }
@@ -127,36 +170,55 @@ class WOPIHostEndpoints {
       }
 
       const fileInfo = {
-        BaseFileName: metadata.name,
-        OwnerId: metadata.ownerId,
-        Size: metadata.size,
+        // Required WOPI properties
+        BaseFileName: metadata.name || `${fileId}.xlsx`,
+        OwnerId: metadata.ownerId || "fabric-user-owner",
+        Size: metadata.size || 0,
         UserId: "fabric-user",
         UserFriendlyName: "Fabric User",
         Version: metadata.version || "1.0",
         
-        // Permissions
+        // Required for Excel Online
+        FileExtension: ".xlsx",
+        LastModifiedTime: metadata.lastModified || new Date().toISOString(),
+        IsAnonymousUser: false,
+        IsEduUser: false,
+        LicenseCheckForEditIsEnabled: false,
+        
+        // Permissions - be more conservative to avoid errors
         SupportsUpdate: true,
         SupportsLocks: true,
         SupportsGetLock: true,
-        SupportsExtendedLockLength: true,
+        SupportsExtendedLockLength: false,
         UserCanWrite: true,
         UserCanRename: false,
         UserCanNotWriteRelative: true,
+        ReadOnly: false,
+        RestrictedWebViewOnly: false,
         
-        // URLs
+        // URLs - ensure they're properly formatted
         HostEditUrl: `${req.protocol}://${req.get('host')}/excel-edit/${fileId}`,
         HostViewUrl: `${req.protocol}://${req.get('host')}/excel-view/${fileId}`,
         CloseUrl: `${req.protocol}://${req.get('host')}/excel-close/${fileId}`,
         HostRestUrl: `${req.protocol}://${req.get('host')}/wopi/files/${fileId}`,
         
         // File hash for change detection
-        SHA256: metadata.hash,
+        SHA256: metadata.hash || "default-hash",
+        
+        // Disable features that might cause issues
+        DisablePrint: false,
+        DisableTranslation: false,
         
         // Fabric-specific metadata
-        LakehouseTable: metadata.lakehouseTable,
-        OriginalDataSource: metadata.originalDataSource
+        LakehouseTable: metadata.lakehouseTable || "",
+        OriginalDataSource: metadata.originalDataSource || ""
       };
 
+      // Set WOPI-specific headers
+      res.setHeader('X-WOPI-MachineName', 'fabric-wopi-host');
+      res.setHeader('X-WOPI-ServerVersion', '1.0.0');
+      res.setHeader('X-WOPI-InterfaceVersion', '1.0');
+      
       res.json(fileInfo);
     } catch (error) {
       console.error('CheckFileInfo error:', error);
@@ -422,8 +484,51 @@ class WOPIHostEndpoints {
     
     console.log(`🎯 Demo Excel interface requested - fileId: ${fileId}, token: ${token}`);
     
-    // Get file metadata
-    const metadata = this.fileMetadata.get(fileId);
+    // Get file metadata - handle different file ID types
+    let metadata = this.fileMetadata.get(fileId);
+    
+    // If not found and it's an app_auth file, create synthetic metadata
+    if (!metadata && fileId.startsWith('app_auth_')) {
+      // Extract table name from app_auth_tableName_timestamp format
+      const parts = fileId.split('_');
+      const tableName = parts.slice(2, -1).join('_'); // Remove 'app_auth' prefix and timestamp suffix
+      
+      console.log(`📝 Creating synthetic metadata for application auth file: ${tableName}`);
+      metadata = {
+        name: `${tableName}.xlsx`,
+        ownerId: 'fabric-app',
+        size: 6775, // Approximate size from creation
+        version: '1.0',
+        hash: `synthetic-${fileId}`,
+        created: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+        lakehouseTable: tableName,
+        originalDataSource: `Application Auth - ${tableName}`,
+        authType: 'application'
+      };
+    }
+    
+    // If not found and it's a real_excel file, create synthetic metadata  
+    if (!metadata && fileId.startsWith('real_excel_')) {
+      const parts = fileId.split('_');
+      const tableName = parts.slice(2, -1).join('_');
+      
+      console.log(`📝 Creating synthetic metadata for real Excel file: ${tableName}`);
+      metadata = {
+        name: `${tableName}.xlsx`,
+        ownerId: 'fabric-app', 
+        size: 6775,
+        version: '1.0',
+        hash: `real-${fileId}`,
+        created: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+        lakehouseTable: tableName,
+        originalDataSource: `Real Excel - ${tableName}`,
+        authType: 'application',
+        isRealExcel: true
+      };
+    }
+    
     if (!metadata) {
       console.error(`❌ File metadata not found for fileId: ${fileId}`);
       return res.status(404).send('File not found');
@@ -626,7 +731,9 @@ class WOPIHostEndpoints {
         <div class="excel-logo">E</div>
         <span>${metadata.name}</span>
         <span style="margin-left: auto; font-size: 12px; opacity: 0.9;">
-            <span class="fabric-badge">Microsoft Fabric</span> Excel Online
+            <span class="fabric-badge">Microsoft Fabric</span> 
+            ${metadata.isRealExcel ? 'Real Excel (WOPI)' : 'Excel Online'}
+            ${metadata.authType === 'application' ? ' (App Auth)' : ''}
         </span>
     </div>
     
@@ -970,28 +1077,22 @@ class WOPIHostEndpoints {
       
       console.log(`🎯 Creating real Excel workbook for: ${tableName}`);
 
-      // Try to import the RealExcelService, fallback to demo if not available
-      let result;
-      try {
-        // Note: This would require the TypeScript to be compiled
-        // For now, we'll simulate the real Excel creation
-        console.log('⚠️  Real Excel service not available in dev mode - using demo simulation');
-        
-        // Simulate real Excel creation result
-        result = {
+      // Check if Azure Entra app authentication is configured for delegated permissions
+      const hasAzureConfig = process.env.AZURE_CLIENT_ID && process.env.AZURE_TENANT_ID;
+      
+      if (!hasAzureConfig) {
+        console.log('⚠️ Real Excel integration not configured');
+        return res.status(500).json({
           success: false,
-          error: 'Real Excel integration requires Azure AD configuration. Set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, and AZURE_TENANT_ID in .env.dev',
-          fallbackMessage: 'Using demo Excel interface instead'
-        };
-        
-      } catch (error) {
-        console.log('❌ Real Excel service not available:', error.message);
-        result = {
-          success: false,
-          error: 'Real Excel service not available',
-          fallbackMessage: 'Using demo Excel interface instead'
-        };
+          error: 'Real Excel integration requires Azure Entra app configuration. Set AZURE_CLIENT_ID and AZURE_TENANT_ID in .env.dev',
+          fallbackMessage: 'Real Excel creation failed - falling back to demo Excel'
+        });
       }
+
+      // Try to create real Excel workbook using Azure Entra app
+      let result;
+      console.log('🔐 Using Azure Entra app authentication for real Excel creation...');
+      result = await this.createRealExcelWithEntraApp(tableName, tableData, schema);
 
       if (result.success) {
         res.json({
@@ -1001,6 +1102,15 @@ class WOPIHostEndpoints {
           fileName: result.fileName,
           webUrl: result.webUrl,
           message: 'Real Excel workbook created successfully'
+        });
+      } else if (result.requiresAuth) {
+        // Return auth URL for user consent
+        res.json({
+          success: false,
+          requiresAuth: true,
+          authUrl: result.authUrl,
+          message: result.message,
+          instructions: result.instructions
         });
       } else {
         res.status(500).json({
@@ -1021,44 +1131,625 @@ class WOPIHostEndpoints {
   }
 
   /**
+   * Create Real Excel Workbook using Azure Entra App authentication (Application Permissions)
+   */
+  async createRealExcelWithEntraApp(tableName, tableData, schema) {
+    const ExcelJS = require('exceljs');
+    const axios = require('axios');
+    
+    try {
+      console.log('🔐 Using Azure Entra app authentication for real Excel creation...');
+      
+      // Get application access token using client credentials flow
+      const accessToken = await this.getApplicationAccessToken();
+      if (!accessToken) {
+        throw new Error('Failed to obtain application access token');
+      }
+
+      console.log('✅ Application access token obtained, proceeding with Excel creation...');
+      return await this.createExcelWithAppToken(tableName, tableData, schema, accessToken);
+
+    } catch (error) {
+      console.error('❌ Application authentication failed:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get application access token using client credentials flow (app-only authentication)
+   */
+  async getApplicationAccessToken() {
+    try {
+      const axios = require('axios');
+      const clientId = process.env.AZURE_CLIENT_ID;
+      const clientSecret = process.env.AZURE_CLIENT_SECRET;
+      const tenantId = process.env.AZURE_TENANT_ID;
+
+      if (!clientId || !clientSecret || !tenantId) {
+        throw new Error('Missing Azure Entra app configuration. Set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, and AZURE_TENANT_ID in .env.dev');
+      }
+
+      console.log('🔐 Requesting application access token...');
+
+      const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+      const requestBody = new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        scope: 'https://graph.microsoft.com/.default',
+        grant_type: 'client_credentials'
+      });
+
+      const response = await axios.post(tokenUrl, requestBody, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+
+      console.log('✅ Application access token obtained');
+      return response.data.access_token;
+
+    } catch (error) {
+      console.error('❌ Failed to get application access token:', error.response?.data || error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Create Excel workbook using application access token
+   */
+  async createExcelWithAppToken(tableName, tableData, schema, accessToken) {
+    const ExcelJS = require('exceljs');
+    const axios = require('axios');
+    
+    try {
+      // Step 1: Create Excel workbook using ExcelJS
+      console.log('📊 Creating Excel workbook...');
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet(tableName);
+
+      // Add headers
+      const headers = Object.keys(schema);
+      worksheet.addRow(headers);
+
+      // Style the header row
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFCCCCCC' }
+      };
+
+      // Add data rows
+      tableData.forEach(row => {
+        const rowData = headers.map(header => row[header] || '');
+        worksheet.addRow(rowData);
+      });
+
+      // Auto-fit columns
+      worksheet.columns.forEach(column => {
+        column.width = 15;
+      });
+
+      // Generate Excel buffer
+      const buffer = await workbook.xlsx.writeBuffer();
+      console.log(`✅ Excel workbook created, size: ${buffer.length} bytes`);
+
+      // Step 2: Try to upload to Microsoft Graph using organization drive
+      console.log('☁️ Attempting to upload to Microsoft Graph with application permissions...');
+      
+      const fileName = `${tableName}_${Date.now()}.xlsx`;
+      
+      try {
+        // Try using the organization's root site drive instead of /me
+        const uploadUrl = `https://graph.microsoft.com/v1.0/sites/root/drive/root:/${fileName}:/content`;
+        
+        const uploadResponse = await axios.put(uploadUrl, buffer, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          }
+        });
+
+        console.log('✅ File uploaded to SharePoint root site');
+        console.log('📂 File details:', {
+          id: uploadResponse.data.id,
+          name: uploadResponse.data.name,
+          size: uploadResponse.data.size,
+          webUrl: uploadResponse.data.webUrl
+        });
+
+        // Create Excel Online embed URL
+        const fileId = uploadResponse.data.id;
+        const excelOnlineUrl = `https://excel.officeapps.live.com/x/_layouts/xlviewerinternal.aspx?ui=en-US&rs=en-US&WOPISrc=https://graph.microsoft.com/v1.0/drives/${uploadResponse.data.parentReference.driveId}/items/${fileId}`;
+
+        return {
+          success: true,
+          fileId: fileId,
+          fileName: uploadResponse.data.name,
+          webUrl: uploadResponse.data.webUrl,
+          embedUrl: excelOnlineUrl,
+          downloadUrl: uploadResponse.data['@microsoft.graph.downloadUrl'],
+          message: 'Real Excel file created and uploaded successfully to SharePoint'
+        };
+
+      } catch (uploadError) {
+        console.warn('⚠️ SharePoint upload failed:', uploadError.response?.data || uploadError.message);
+        
+        // Fallback: Save locally and create WOPI endpoint for real Excel
+        console.log('📁 Creating local WOPI-enabled Excel file...');
+        
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Create temp directory if it doesn't exist
+        const tempDir = path.join(__dirname, 'temp');
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+        
+        // Save the real Excel file locally
+        const localFilePath = path.join(tempDir, fileName);
+        fs.writeFileSync(localFilePath, buffer);
+        
+        const fileId = `real_excel_${tableName}_${Date.now()}`;
+        
+        // Store file metadata for WOPI access
+        this.fileMetadata.set(fileId, {
+          name: fileName,
+          ownerId: 'fabric-app',
+          size: buffer.length,
+          version: '1.0',
+          hash: `real-${fileId}`,
+          created: new Date().toISOString(),
+          lastModified: new Date().toISOString(),
+          lakehouseTable: tableName,
+          originalDataSource: `Application Auth - ${tableName}`,
+          authType: 'application',
+          localPath: localFilePath,
+          isRealExcel: true
+        });
+        
+        // Store the actual Excel content for WOPI serving
+        this.fileContents.set(fileId, buffer);
+        
+        console.log('✅ Real Excel file saved locally with WOPI support');
+        
+        // Create Excel Online embed URL pointing to our WOPI endpoint
+        // Note: Using 127.0.0.1 instead of localhost for better compatibility
+        const wopiUrl = `http://127.0.0.1:60006/wopi/files/${fileId}`;
+        const accessToken = this.generateAccessToken(fileId);
+        const excelOnlineUrl = `https://excel.officeapps.live.com/x/_layouts/xlviewerinternal.aspx?ui=en-US&rs=en-US&WOPISrc=${encodeURIComponent(wopiUrl)}&access_token=${encodeURIComponent(accessToken)}`;
+        
+        return {
+          success: true,
+          fileId: fileId,
+          fileName: fileName,
+          webUrl: `http://localhost:60006/demo-excel?fileId=${fileId}&token=real`,
+          embedUrl: excelOnlineUrl,
+          downloadUrl: `http://localhost:60006/wopi/files/${fileId}/contents`,
+          message: 'Real Excel file created with local WOPI hosting (SharePoint upload failed)',
+          isRealExcel: true
+        };
+      }
+
+    } catch (error) {
+      console.error('❌ Failed to create Excel with application token:', error.response?.data || error.message);
+      throw new Error(`Excel creation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create Excel workbook using user access token
+   */
+  async createExcelWithUserToken(tableName, tableData, schema, accessToken) {
+    const ExcelJS = require('exceljs');
+    const axios = require('axios');
+    
+    try {
+      // Step 1: Create Excel workbook using ExcelJS
+      console.log('📊 Creating Excel workbook...');
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet(tableName);
+      
+      // Add headers from schema
+      const headers = schema.map(col => col.name);
+      worksheet.addRow(headers);
+      
+      // Style headers
+      const headerRow = worksheet.getRow(1);
+      headerRow.eachCell(cell => {
+        cell.font = { bold: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE1F5FE' }
+        };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      });
+      
+      // Add data rows
+      tableData.forEach(row => {
+        worksheet.addRow(row);
+      });
+      
+      // Auto-size columns
+      worksheet.columns.forEach(column => {
+        let maxLength = 0;
+        column.eachCell({ includeEmpty: true }, cell => {
+          const cellLength = cell.value ? cell.value.toString().length : 10;
+          maxLength = Math.max(maxLength, cellLength);
+        });
+        column.width = Math.min(maxLength + 2, 30);
+      });
+      
+      // Convert to buffer
+      const buffer = await workbook.xlsx.writeBuffer();
+      
+      // Step 2: Use delegated permissions with /me endpoints
+      console.log('🧪 Accessing user OneDrive with delegated permissions...');
+      
+      try {
+        // Access user's OneDrive using /me endpoint (works with delegated permissions)
+        console.log('🔍 Accessing user OneDrive...');
+        const driveResponse = await axios.get('https://graph.microsoft.com/v1.0/me/drive', {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        
+        const driveId = driveResponse.data.id;
+        console.log('✅ Successfully accessed user OneDrive:', driveId);
+
+        // Step 3: Upload to OneDrive
+        console.log('☁️ Uploading to OneDrive...');
+        const fileName = `Fabric_${tableName}_${new Date().toISOString().split('T')[0]}.xlsx`;
+        
+        // Upload the file
+        const uploadResponse = await axios.put(
+          `https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURIComponent(fileName)}:/content`,
+          buffer,
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            }
+          }
+        );
+
+        console.log('✅ File uploaded successfully:', uploadResponse.data.id);
+
+        // Step 4: Create embed link
+        console.log('🔗 Creating embed link...');
+        const embedResponse = await axios.post(
+          `https://graph.microsoft.com/v1.0/me/drive/items/${uploadResponse.data.id}/createLink`,
+          {
+            type: 'embed',
+            scope: 'anonymous'
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        // Create web link for fallback
+        const webResponse = await axios.post(
+          `https://graph.microsoft.com/v1.0/me/drive/items/${uploadResponse.data.id}/createLink`,
+          {
+            type: 'edit',
+            scope: 'anonymous'
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        console.log('🎉 Real Excel workbook created successfully!');
+
+        return {
+          success: true,
+          fileId: uploadResponse.data.id,
+          fileName: fileName,
+          embedUrl: embedResponse.data.link.webUrl,
+          webUrl: webResponse.data.link.webUrl,
+          metadata: {
+            tableName,
+            rowCount: tableData.length,
+            createdAt: new Date().toISOString()
+          }
+        };
+
+      } catch (driveError) {
+        console.error('❌ Failed to access user OneDrive');
+        console.error('Drive access error:', driveError.response?.data || driveError.message);
+        
+        throw new Error(`Cannot access user OneDrive with delegated permissions. Please ensure:\n` +
+          `1. User has signed in and consented to permissions\n` +
+          `2. Files.ReadWrite delegated permission is granted\n` +
+          `3. The user has a valid OneDrive`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Excel creation with user token failed:', error);
+      throw new Error(`Excel creation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle OAuth callback and exchange authorization code for access token
+   */
+  async handleOAuthCallback(req, res) {
+    try {
+      const { code, state, error } = req.query;
+
+      if (error) {
+        console.error('❌ OAuth error:', error);
+        return res.status(400).send(`
+          <html>
+            <body>
+              <h1>❌ Authentication Failed</h1>
+              <p>Error: ${error}</p>
+              <p><a href="#" onclick="window.close()">Close this window</a></p>
+            </body>
+          </html>
+        `);
+      }
+
+      if (!code) {
+        console.error('❌ No authorization code received');
+        return res.status(400).send(`
+          <html>
+            <body>
+              <h1>❌ Authentication Failed</h1>
+              <p>No authorization code received</p>
+              <p><a href="#" onclick="window.close()">Close this window</a></p>
+            </body>
+          </html>
+        `);
+      }
+
+      console.log('🔐 Received authorization code, exchanging for access token...');
+      console.log('🔒 Session state:', state);
+
+      // Exchange authorization code for access token with PKCE
+      const tokenResult = await this.exchangeCodeForToken(code, state);
+
+      if (tokenResult.success) {
+        // Store the token for future use (in production, use secure storage)
+        this.userAccessToken = tokenResult.accessToken;
+        this.userRefreshToken = tokenResult.refreshToken;
+        
+        console.log('✅ User access token obtained successfully!');
+        
+        res.send(`
+          <html>
+            <body>
+              <h1>✅ Authentication Successful!</h1>
+              <p>You can now close this window and try creating a real Excel file again.</p>
+              <p><a href="#" onclick="window.close()">Close this window</a></p>
+              <script>
+                // Auto-close after 3 seconds
+                setTimeout(() => window.close(), 3000);
+              </script>
+            </body>
+          </html>
+        `);
+      } else {
+        console.error('❌ Token exchange failed:', tokenResult.error);
+        res.status(500).send(`
+          <html>
+            <body>
+              <h1>❌ Token Exchange Failed</h1>
+              <p>Error: ${tokenResult.error}</p>
+              <p><a href="#" onclick="window.close()">Close this window</a></p>
+            </body>
+          </html>
+        `);
+      }
+
+    } catch (error) {
+      console.error('❌ OAuth callback error:', error);
+      res.status(500).send(`
+        <html>
+          <body>
+            <h1>❌ Authentication Error</h1>
+            <p>Error: ${error.message}</p>
+            <p><a href="#" onclick="window.close()">Close this window</a></p>
+          </body>
+        </html>
+      `);
+    }
+  }
+
+  /**
+   * Exchange authorization code for access token with PKCE support
+   */
+  async exchangeCodeForToken(code, sessionId) {
+    try {
+      const axios = require('axios');
+      const clientId = process.env.AZURE_CLIENT_ID;
+      const tenantId = process.env.AZURE_TENANT_ID;
+
+      if (!clientId || !tenantId) {
+        return {
+          success: false,
+          error: 'Missing Azure configuration'
+        };
+      }
+
+      // Retrieve the stored PKCE code verifier
+      const pkceSession = this.pkceStorage.get(sessionId);
+      if (!pkceSession) {
+        console.error('❌ PKCE session not found for session ID:', sessionId);
+        return {
+          success: false,
+          error: 'Invalid or expired authentication session'
+        };
+      }
+
+      const { codeVerifier } = pkceSession;
+      console.log('🔒 Retrieved PKCE code verifier for session:', sessionId);
+
+      const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+      const redirectUri = process.env.OAUTH_REDIRECT_URI || 'http://localhost:60006/auth/callback';
+      const requestBody = new URLSearchParams({
+        client_id: clientId,
+        code: code,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+        scope: 'https://graph.microsoft.com/Files.ReadWrite https://graph.microsoft.com/User.Read offline_access',
+        code_verifier: codeVerifier
+      });
+
+      console.log('🔐 Exchanging code for token with PKCE at:', tokenUrl);
+      console.log('🔗 Using redirect URI for token exchange:', redirectUri);
+
+      const response = await axios.post(tokenUrl, requestBody, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+
+      console.log('✅ Token exchange successful');
+
+      // Clean up the PKCE session after successful exchange
+      this.pkceStorage.delete(sessionId);
+
+      return {
+        success: true,
+        accessToken: response.data.access_token,
+        refreshToken: response.data.refresh_token,
+        expiresIn: response.data.expires_in
+      };
+
+    } catch (error) {
+      console.error('❌ Token exchange failed:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.error_description || error.message
+      };
+    }
+  }
+
+  /**
+   * Get access token using Azure Entra app (client credentials flow)
+   */
+  async getEntraAppAccessToken() {
+    try {
+      const clientId = process.env.AZURE_CLIENT_ID;
+      const clientSecret = process.env.AZURE_CLIENT_SECRET;
+      const tenantId = process.env.AZURE_TENANT_ID;
+
+      if (!clientId || !clientSecret || !tenantId) {
+        throw new Error('Missing Azure Entra app configuration. Set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, and AZURE_TENANT_ID in .env.dev');
+      }
+
+      console.log('🔐 Getting access token for client ID:', clientId);
+
+      // Create MSAL instance
+      const msalConfig = {
+        auth: {
+          clientId: clientId,
+          clientSecret: clientSecret,
+          authority: `https://login.microsoftonline.com/${tenantId}`
+        }
+      };
+
+      const cca = new ConfidentialClientApplication(msalConfig);
+
+      // Request access token with proper scopes for Graph API
+      const clientCredentialRequest = {
+        scopes: [
+          'https://graph.microsoft.com/.default'
+        ]
+      };
+
+      console.log('🔐 Requesting access token with scopes:', clientCredentialRequest.scopes);
+
+      const response = await cca.acquireTokenByClientCredential(clientCredentialRequest);
+
+      if (response && response.accessToken) {
+        console.log('✅ Access token acquired successfully');
+        return response.accessToken;
+      } else {
+        throw new Error('No access token in response');
+      }
+
+    } catch (error) {
+      console.error('❌ Failed to get Entra app access token:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Test Real Excel Integration
    */
   async testRealExcel(req, res) {
     try {
       console.log('🧪 Testing real Excel integration...');
 
-      // Try to test real Excel integration, fallback to demo info
-      try {
-        // Note: This would require the TypeScript to be compiled
-        console.log('⚠️  Real Excel service not available in dev mode - testing simulated');
-        
-        // Check if Azure AD configuration is available
-        const hasAzureConfig = process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET && process.env.AZURE_TENANT_ID;
-        
-        if (hasAzureConfig) {
+      // Check Entra app authentication configuration
+      const hasAzureConfig = process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET && process.env.AZURE_TENANT_ID;
+      
+      if (hasAzureConfig) {
+        // Test Azure Entra app authentication
+        try {
+          console.log('🔐 Testing Azure Entra app authentication...');
+          const accessToken = await this.getEntraAppAccessToken();
+          
+          if (accessToken) {
+            res.json({
+              success: true,
+              available: true,
+              authMethod: 'Azure Entra App',
+              message: 'Real Excel integration available with Azure Entra app authentication',
+              recommendation: 'Ready to create real Excel workbooks with proper OneDrive permissions'
+            });
+          } else {
+            res.json({
+              success: false,
+              available: false,
+              authMethod: 'Azure CLI (not authenticated)',
+              message: 'Azure CLI authentication failed. Run "az login" first.',
+              recommendation: 'Run "az login" then try again'
+            });
+          }
+        } catch (error) {
           res.json({
             success: false,
             available: false,
-            message: 'Real Excel integration configured but service not compiled. TypeScript services need to be built.',
-            azureConfigured: true,
-            recommendation: 'Use demo Excel for development testing'
-          });
-        } else {
-          res.json({
-            success: false,
-            available: false,
-            message: 'Real Excel integration not configured. Set Azure AD credentials in .env.dev',
-            azureConfigured: false,
-            recommendation: 'Use demo Excel for development testing'
+            authMethod: 'Azure CLI (error)',
+            message: `Azure CLI authentication test failed: ${error.message}`,
+            recommendation: 'Install Azure CLI and run "az login"'
           });
         }
-        
-      } catch (error) {
+      } else if (hasAzureConfig) {
         res.json({
           success: false,
           available: false,
-          message: 'Real Excel integration test failed: ' + error.message,
-          recommendation: 'Use demo Excel for development testing'
+          authMethod: 'Azure AD App',
+          message: 'Azure AD app authentication not yet implemented in JavaScript backend',
+          azureConfigured: true,
+          recommendation: 'Use Azure CLI authentication instead (set USE_AZURE_CLI_AUTH=true)'
+        });
+      } else {
+        res.json({
+          success: false,
+          available: false,
+          authMethod: 'None',
+          message: 'Real Excel integration not configured',
+          azureConfigured: false,
+          recommendation: 'Set USE_AZURE_CLI_AUTH=true and run "az login", or configure Azure AD app credentials'
         });
       }
 
@@ -1120,6 +1811,111 @@ class WOPIHostEndpoints {
         success: false,
         error: error.message,
         files: []
+      });
+    }
+  }
+
+  /**
+   * Get Excel data in JSON format for the local viewer
+   */
+  async getExcelDataForViewer(req, res) {
+    try {
+      const { fileId } = req.params;
+      console.log(`📊 Getting Excel data for local viewer: ${fileId}`);
+
+      // Set CORS headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+      // Check if file exists in our storage
+      const fileData = this.fileContents.get(fileId);
+      const metadata = this.fileMetadata.get(fileId);
+
+      if (!fileData || !metadata) {
+        return res.status(404).json({ 
+          error: 'Excel file not found',
+          fileId: fileId
+        });
+      }
+
+      // Parse the Excel file using ExcelJS
+      const ExcelJS = require('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      
+      // Load the Excel buffer
+      await workbook.xlsx.load(fileData);
+      
+      // Get the first worksheet
+      const worksheet = workbook.worksheets[0];
+      if (!worksheet) {
+        return res.status(400).json({ 
+          error: 'No worksheets found in Excel file',
+          fileId: fileId
+        });
+      }
+
+      // Extract headers from first row
+      const headers = [];
+      const firstRow = worksheet.getRow(1);
+      firstRow.eachCell((cell, colNumber) => {
+        headers.push(cell.value ? cell.value.toString() : `Column ${colNumber}`);
+      });
+
+      // Extract data rows (skip header row)
+      const rows = [];
+      const rowCount = worksheet.rowCount;
+      
+      for (let rowNumber = 2; rowNumber <= rowCount; rowNumber++) {
+        const row = worksheet.getRow(rowNumber);
+        const rowData = [];
+        
+        // Get values for each column up to the header count
+        for (let colNumber = 1; colNumber <= headers.length; colNumber++) {
+          const cell = row.getCell(colNumber);
+          const value = cell.value;
+          
+          // Convert cell value to string/number
+          if (value === null || value === undefined) {
+            rowData.push('');
+          } else if (typeof value === 'object' && value.result !== undefined) {
+            // Handle formula cells
+            rowData.push(value.result);
+          } else {
+            rowData.push(value);
+          }
+        }
+        
+        // Only add non-empty rows
+        if (rowData.some(cell => cell !== '')) {
+          rows.push(rowData);
+        }
+      }
+
+      // Prepare response data
+      const excelData = {
+        headers: headers,
+        rows: rows,
+        metadata: {
+          rowCount: rows.length,
+          columnCount: headers.length,
+          fileSize: fileData.length,
+          lastModified: metadata.lastModified || new Date().toISOString(),
+          fileName: metadata.name,
+          tableName: metadata.lakehouseTable || 'Unknown',
+          fileId: fileId
+        }
+      };
+
+      console.log(`✅ Excel data extracted: ${headers.length} columns, ${rows.length} rows`);
+      res.json(excelData);
+
+    } catch (error) {
+      console.error('❌ Get Excel data for viewer error:', error);
+      res.status(500).json({ 
+        error: 'Failed to read Excel file',
+        message: error.message,
+        fileId: req.params.fileId
       });
     }
   }

@@ -1,21 +1,24 @@
 # GitHub Copilot Instructions for Microsoft Fabric Extensibility Toolkit
 
-## ⚠️ CRITICAL: npm Command Pattern
+## ⚠️ CRITICAL: Development Server Startup
 
-**⚠️ MANDATORY FOR ALL npm COMMANDS:**
-```bash
-cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm [COMMAND]
+**⚠️ MANDATORY FOR STARTING THE DEV SERVER:**
+```powershell
+d:\Git\FET\fabric-extensibility-toolkit\scripts\Run\StartDevServer.ps1
 ```
 
-**❌ NEVER use separate commands:**
+**❌ NEVER use direct npm commands for server startup:**
 ```bash
-cd Workload
-npm start  # FAILS - npm resets directory context
+cd Workload && npm start  # FAILS - bypasses proper environment setup
+npm start  # FAILS - wrong directory and missing setup
 ```
 
-**✅ ALWAYS use compound commands:**
-```bash
-cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm start
+**✅ ALWAYS use the PowerShell script for development:**
+```powershell
+# Use the official startup script (handles Codespaces, environment setup, etc.)
+d:\Git\FET\fabric-extensibility-toolkit\scripts\Run\StartDevServer.ps1
+
+# For other npm operations, use compound commands:
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm install
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm run build
 ```
@@ -36,35 +39,38 @@ This file contains **GitHub Copilot-specific** instructions that extend the gene
 
 ## ⚠️ Critical Working Directory Requirements
 
-**MANDATORY**: All Node.js/npm commands MUST be executed from the `Workload` directory:
+**MANDATORY**: For server startup, ALWAYS use the PowerShell script:
 
 ```powershell
-# ✅ CORRECT - Always navigate to Workload directory first
-cd Workload
-npm start
-npm install
-npm run build
+# ✅ CORRECT - Use the official startup script
+d:\Git\FET\fabric-extensibility-toolkit\scripts\Run\StartDevServer.ps1
 
-# ❌ INCORRECT - Will fail with "package.json not found"
-npm start  # (when in root directory)
+# ❌ INCORRECT - Will fail with incorrect environment setup
+cd Workload && npm start  # Bypasses environment detection
+npm start                 # Wrong directory and missing setup
+```
 
-# ⚠️ CRITICAL: When using run_in_terminal tool, ALWAYS use compound commands
-# npm start creates a new process and resets the working directory
-cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm start    # ✅ Required
+**For other npm operations**, use compound commands from the Workload directory:
+
+```powershell
+# ✅ Required for npm operations other than server startup
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm install  # ✅ Required
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm run build # ✅ Required
+cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm test     # ✅ Required
 
-# ⚠️ NEVER FORGET: THIS IS THE MOST COMMON MISTAKE - ALWAYS USE COMPOUND COMMANDS
-# ANY npm command MUST use: cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm X
+# ⚠️ CRITICAL: When using run_in_terminal tool for npm operations:
+# npm creates a new process and resets the working directory
+# ANY npm command (except server startup) MUST use: cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm X
 # Do NOT use separate cd and npm commands - npm creates new processes that reset directory
 ```
 
-**Technical Reason**: The `package.json`, `tsconfig.json`, and all Node.js configurations are located in the `Workload/` subdirectory, not the repository root. Additionally, `npm start` spawns a new process that resets the working directory, so compound commands with absolute paths are essential.
+**Technical Reason**: The `StartDevServer.ps1` script handles environment detection (Codespaces vs local), proper directory navigation, and environment-specific configurations. For other npm operations, the `package.json`, `tsconfig.json`, and all Node.js configurations are located in the `Workload/` subdirectory, not the repository root. Additionally, `npm` commands spawn new processes that reset the working directory, so compound commands with absolute paths are essential.
 
 **⚠️ CRITICAL REMINDER FOR COPILOT**: 
-- EVERY npm command requires: `cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm X`
+- Server startup: Use `d:\Git\FET\fabric-extensibility-toolkit\scripts\Run\StartDevServer.ps1`
+- Other npm commands: Use `cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm X`
 - NEVER use separate cd and npm commands
-- This is the #1 most common error - compound commands are MANDATORY
+- This is the #1 most common error - proper startup script and compound commands are MANDATORY
 
 ## 🤖 GitHub Copilot Enhanced Features
 
@@ -137,21 +143,23 @@ Instead of manual file creation, GitHub Copilot can generate complete structures
 GitHub Copilot understands context-aware shortcuts:
 
 ```powershell
-# ⚠️ CRITICAL: ALWAYS use absolute path compound commands for npm operations
-# npm commands create new processes that reset the working directory
-cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm start    # ✅ Required for startup
+# ⚠️ CRITICAL: Use official startup script for development server
+d:\Git\FET\fabric-extensibility-toolkit\scripts\Run\StartDevServer.ps1  # ✅ Required for startup
+
+# For other npm operations, use absolute path compound commands:
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm install  # ✅ Required for dependencies
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm run build # ✅ Required for builds
 cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm test     # ✅ Required for testing
 
 # ❌ NEVER use these patterns - they will fail:
-npm start         # Fails - wrong directory and process reset
-cd Workload; npm start  # Fails - process reset loses directory context
+npm start         # Fails - bypasses environment setup and wrong directory
+cd Workload; npm start  # Fails - bypasses proper environment detection
 cd Workload
-npm start         # Fails - npm runs in new process that resets to root
+npm start         # Fails - bypasses startup script with environment handling
 
-# ⚠️ COPILOT REMINDER: THE PATTERN IS ALWAYS:
-# cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm [COMMAND]
+# ⚠️ COPILOT REMINDER: THE PATTERNS ARE:
+# Server startup: d:\Git\FET\fabric-extensibility-toolkit\scripts\Run\StartDevServer.ps1
+# Other npm ops: cd D:\Git\FET\fabric-extensibility-toolkit\Workload && npm [COMMAND]
 
 # Smart environment detection with .env-based configuration
 fabric dev start    # Automatically uses .env.dev configuration

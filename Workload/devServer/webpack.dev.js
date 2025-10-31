@@ -35,10 +35,11 @@ module.exports = merge(baseConfig, {
         }),
     ],
     devServer: {
-        port: 60006,
+        port: 60006, // Frontend development server port
         host: '127.0.0.1',
         open: false,
         historyApiFallback: true,
+        https: false, // Use HTTP for frontend development
         headers: {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET,OPTIONS",

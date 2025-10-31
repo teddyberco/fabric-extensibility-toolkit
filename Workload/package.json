@@ -13,7 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@azure/msal-node": "^2.5.1",
+    "@azure/msal-node": "^2.16.3",
     "@fluentui/react": "^8.110.7",
     "@fluentui/react-components": "^9.7.2",
     "@fluentui/react-icons": "2.0.226",
@@ -21,17 +21,20 @@
     "@microsoft/microsoft-graph-client": "^3.0.5",
     "@ms-fabric/workload-client": "^3.0.0",
     "@reduxjs/toolkit": "^2.6.0",
+    "axios": "^1.12.2",
     "exceljs": "^4.3.0",
     "history": "^4.9.0",
     "i18next": "^25.4.1",
     "i18next-http-backend": "^2.4.2",
     "jwt-decode": "^3.1.2",
+    "luckysheet": "^2.1.13",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-i18next": "^15.0.1",
     "react-redux": "^9.2.0",
     "react-router-dom": "^5.3.4",
-    "uuid": "^11.0.5"
+    "uuid": "^11.0.5",
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "@types/node": "^16.0.0",

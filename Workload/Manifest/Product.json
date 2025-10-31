@@ -114,6 +114,5 @@
           "license": {"url": "https://azuremarketplace.microsoft.com/sell"}
       }
     },
-    "itemJobTypes" :["storeData", "others"],
     "compatibleItemTypes" : ["Lakehouse"]
 }
