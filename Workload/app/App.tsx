@@ -55,18 +55,12 @@ export function App({ history, workloadClient }: AppProps) {
                     workloadClient={workloadClient} data-testid="HelloWorldItem-editor" />
             </Route>
             
-            {/* Routings for the Excel Edit Item Editor */}
-            <Route path="/ExcelEditItem-editor/:itemObjectId">
-                <ExcelEditItemEditor
-                    workloadClient={workloadClient} data-testid="ExcelEditItem-editor" />
-            </Route>
-            
-            <Route path="/HelloWorldItem-settings-page">
+            <Route path="/HelloWorldItem-settings-page/:itemObjectId">
                 <CustomItemSettings 
                     workloadClient={workloadClient}
                         data-testid="HelloWorldItem-settings-page" />
             </Route>
-            <Route path="/HelloWorldItem-about-page">
+            <Route path="/HelloWorldItem-about-page/:itemObjectId">
                 <CustomAbout  workloadClient={workloadClient} 
                     data-testid="HelloWorldItem-about-page" />
             </Route>
