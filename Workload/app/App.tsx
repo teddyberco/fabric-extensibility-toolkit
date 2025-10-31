@@ -65,6 +65,12 @@ export function App({ history, workloadClient }: AppProps) {
                     data-testid="HelloWorldItem-about-page" />
             </Route>
 
+            {/* Routings for the Excel Edit Item Editor */}
+            <Route path="/ExcelEditItem-editor/:itemObjectId">
+                <ExcelEditItemEditor
+                    workloadClient={workloadClient} data-testid="ExcelEditItem-editor" />
+            </Route>
+
              {/* Playground routes  can be deleted if not needed */}
             <Route path="/client-sdk-playground">
                 <Provider store={ClientSDKStore}>
