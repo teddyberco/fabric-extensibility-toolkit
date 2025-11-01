@@ -15,6 +15,9 @@ export interface ExcelCreationOptions {
   tableName: string;
   schema: TableSchema[];
   data: any[][];
+  sqlConnectionString?: string; // Optional SQL endpoint connection string
+  workspaceId?: string; // Optional workspace ID
+  lakehouseId?: string; // Optional lakehouse ID
 }
 
 /**
@@ -74,6 +77,57 @@ export async function createAndDownloadExcel(options: ExcelCreationOptions): Pro
     });
   });
 
+  // Add connection instructions worksheet if SQL connection string is provided
+  if (options.sqlConnectionString) {
+    const instructionsSheet = workbook.addWorksheet('📖 How to Get Real Data');
+    
+    // Add title
+    instructionsSheet.getCell('A1').value = '🔗 Connect to Lakehouse SQL Endpoint';
+    instructionsSheet.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FF0078D4' } };
+    
+    // Add instructions
+    const instructions = [
+      '',
+      'This Excel file contains the TABLE SCHEMA only.',
+      'To get REAL DATA from the Lakehouse, follow these steps:',
+      '',
+      '📌 Method 1: Power Query (Recommended)',
+      '1. In Excel, go to: Data → Get Data → From Database → From SQL Server',
+      `2. Server: ${options.sqlConnectionString}`,
+      `3. Database: Leave empty or use workspace name`,
+      '4. Data Connectivity mode: DirectQuery or Import',
+      '5. Authentication: Microsoft Account (use your Fabric account)',
+      `6. Select table: ${options.tableName}`,
+      '7. Click "Load" to import the real data',
+      '',
+      '📌 Method 2: SQL Server Management Studio (SSMS)',
+      `1. Connect to: ${options.sqlConnectionString}`,
+      '2. Authentication: Microsoft Entra (Azure Active Directory)',
+      `3. Query: SELECT * FROM [${options.tableName}]`,
+      '',
+      '📌 Connection Details:',
+      `   SQL Endpoint: ${options.sqlConnectionString}`,
+      `   Table Name: ${options.tableName}`,
+      '   Authentication: Microsoft Entra ID',
+      '   Port: 1433 (default SQL Server port)',
+      '',
+      '💡 Tip: Power Query allows live refresh - your Excel stays connected to Lakehouse!',
+      '',
+      '📚 Documentation:',
+      '   https://learn.microsoft.com/en-us/fabric/data-warehouse/connectivity',
+    ];
+
+    instructions.forEach((line, index) => {
+      instructionsSheet.getCell(`A${index + 2}`).value = line;
+      if (line.startsWith('📌') || line.startsWith('💡') || line.startsWith('📚')) {
+        instructionsSheet.getCell(`A${index + 2}`).font = { bold: true, size: 11 };
+      }
+    });
+
+    // Auto-fit column width
+    instructionsSheet.getColumn('A').width = 100;
+  }
+
   // Generate Excel file as blob
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
@@ -97,6 +151,73 @@ export async function createAndDownloadExcel(options: ExcelCreationOptions): Pro
 }
 
 /**
+ * Get SQL Analytics Endpoint connection string
+ * Uses the SQL Endpoint API to get the connection string
+ */
+async function getSqlEndpointConnectionString(
+  workspaceId: string,
+  sqlEndpointId: string,
+  token: string
+): Promise<string> {
+  const url = `https://api.fabric.microsoft.com/v1/workspaces/${workspaceId}/sqlEndpoints/${sqlEndpointId}/connectionString`;
+  
+  console.log('🔌 Fetching SQL Endpoint connection string...');
+  
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.warn(`⚠️ Failed to fetch SQL connection string: ${response.status} ${errorText}`);
+    return undefined;
+  }
+
+  const result = await response.json();
+  return result.connectionString;
+}
+
+/**
+ * Get Lakehouse properties including SQL endpoint ID
+ */
+async function getLakehouseProperties(
+  workspaceId: string,
+  lakehouseId: string,
+  token: string
+): Promise<{
+  oneLakeTablesPath: string;
+  oneLakeFilesPath: string;
+  sqlEndpointId?: string;
+}> {
+  const url = `https://api.fabric.microsoft.com/v1/workspaces/${workspaceId}/lakehouses/${lakehouseId}`;
+  
+  console.log('🔍 Fetching Lakehouse properties...');
+  
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to fetch Lakehouse properties: ${response.status} ${errorText}`);
+  }
+
+  const lakehouse = await response.json();
+  
+  return {
+    oneLakeTablesPath: lakehouse.properties?.oneLakeTablesPath,
+    oneLakeFilesPath: lakehouse.properties?.oneLakeFilesPath,
+    sqlEndpointId: lakehouse.properties?.sqlEndpointProperties?.id
+  };
+}
+
+/**
  * Fetch table data from Fabric Lakehouse and create Excel
  * @param workspaceId Workspace ID
  * @param lakehouseId Lakehouse ID
@@ -116,7 +237,23 @@ export async function fetchAndDownloadLakehouseTable(
   console.log('   Table:', tableName);
 
   try {
-    // Fetch table metadata from Fabric API
+    // Step 1: Get Lakehouse properties (to get SQL endpoint ID)
+    const lakehouseProps = await getLakehouseProperties(workspaceId, lakehouseId, accessToken);
+    console.log('✅ Lakehouse properties fetched');
+    console.log('   SQL Endpoint ID:', lakehouseProps.sqlEndpointId);
+    
+    // Step 2: Get SQL connection string from SQL Endpoint API
+    let sqlConnectionString: string | undefined;
+    if (lakehouseProps.sqlEndpointId) {
+      sqlConnectionString = await getSqlEndpointConnectionString(
+        workspaceId, 
+        lakehouseProps.sqlEndpointId, 
+        accessToken
+      );
+      console.log('✅ SQL Connection String:', sqlConnectionString);
+    }
+    
+    // Step 3: Fetch table metadata from Fabric API
     const tablesUrl = `https://api.fabric.microsoft.com/v1/workspaces/${workspaceId}/lakehouses/${lakehouseId}/tables`;
     console.log('📋 Fetching tables:', tablesUrl);
 
@@ -172,11 +309,12 @@ export async function fetchAndDownloadLakehouseTable(
     console.log('💡 Creating Excel with schema and sample data');
     console.log('💡 For real data, use Power Query connection to Lakehouse in Excel');
 
-    // Create and download Excel
+    // Create and download Excel with SQL connection info
     await createAndDownloadExcel({
       tableName,
       schema,
-      data: sampleData
+      data: sampleData,
+      sqlConnectionString: sqlConnectionString
     });
 
   } catch (error) {
