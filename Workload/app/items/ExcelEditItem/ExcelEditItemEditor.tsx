@@ -25,6 +25,8 @@ export function ExcelEditItemEditor(props: PageProps) {
   const [item, setItem] = useState<ItemWithDefinition<ExcelEditItemDefinition>>();
   const [currentView, setCurrentView] = useState<CurrentView>(VIEW_TYPES.EMPTY);
   const [hasBeenSaved, setHasBeenSaved] = useState<boolean>(false);
+  const [sparkSessionId, setSparkSessionId] = useState<string | null>(null);
+  const [isSparkSessionStarting, setIsSparkSessionStarting] = useState(false);
 
   const { pathname } = useLocation();
 
@@ -194,6 +196,62 @@ export function ExcelEditItemEditor(props: PageProps) {
     }
   };
 
+  const handleStartSparkSession = async () => {
+    console.log('🚀 Starting Spark session...');
+    setIsSparkSessionStarting(true);
+    
+    try {
+      // Get lakehouse info from the first canvas item with lakehouse metadata
+      const workflowState = item?.definition?.state as ExcelEditWorkflowState;
+      const canvasItem = workflowState?.canvasItems?.find(
+        (ci: any) => ci.source?.lakehouse?.id && ci.source?.lakehouse?.workspaceId
+      );
+
+      if (!canvasItem) {
+        callNotificationOpen(
+          workloadClient,
+          "No Lakehouse Connected",
+          "Please add a table from a lakehouse first before starting a Spark session.",
+          undefined,
+          undefined
+        );
+        return;
+      }
+
+      const workspaceId = canvasItem.source.lakehouse.workspaceId;
+      const lakehouseId = canvasItem.source.lakehouse.id;
+
+      // Import Spark utilities
+      const { SparkLivyClient } = await import('../../clients/SparkLivyClient');
+      const { getOrCreateSparkSession } = await import('../../utils/SparkQueryHelper');
+
+      const sparkClient = new SparkLivyClient(workloadClient);
+      const session = await getOrCreateSparkSession(sparkClient, workspaceId, lakehouseId);
+      
+      setSparkSessionId(session.id);
+      console.log('✅ Spark session ready:', session.id);
+
+      callNotificationOpen(
+        workloadClient,
+        "Spark Session Ready",
+        `Session ${session.id.substring(0, 8)}... is ready to process queries. Data downloads will be faster now.`,
+        undefined,
+        undefined
+      );
+    } catch (error: any) {
+      console.error('❌ Error starting Spark session:', error);
+      callNotificationOpen(
+        workloadClient,
+        "Spark Session Error",
+        `Failed to start Spark session: ${error.message}`,
+        undefined,
+        undefined
+      );
+    } finally {
+      setIsSparkSessionStarting(false);
+    }
+  };
+
   async function SaveItem() {
     if (!item?.definition?.state) {
       console.error('❌ No item state to save');
@@ -310,6 +368,9 @@ export function ExcelEditItemEditor(props: PageProps) {
         saveItemCallback={SaveItem}
         openSettingsCallback={handleOpenSettings}
         navigateToCanvasOverviewCallback={navigateToCanvasOverview}
+        startSparkSessionCallback={handleStartSparkSession}
+        isSparkSessionStarting={isSparkSessionStarting}
+        sparkSessionId={sparkSessionId}
       />
       {currentView === VIEW_TYPES.EMPTY ? (
         <ExcelEditItemEditorEmpty
@@ -323,6 +384,7 @@ export function ExcelEditItemEditor(props: PageProps) {
           item={item}
           currentView={currentView}
           onNavigateToTableEditor={navigateToTableEditor}
+          sparkSessionId={sparkSessionId}
         />
       ) : (
         <ExcelEditItemEditorDefault
@@ -330,6 +392,7 @@ export function ExcelEditItemEditor(props: PageProps) {
           item={item}
           currentView={currentView}
           onNavigateToCanvasOverview={navigateToCanvasOverview}
+          sparkSessionId={sparkSessionId}
         />
       )}
     </Stack>

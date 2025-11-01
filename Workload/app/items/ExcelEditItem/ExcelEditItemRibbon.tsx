@@ -7,7 +7,8 @@ import {
 import {
   Save24Regular,
   Settings24Regular,
-  Rocket24Regular
+  Rocket24Regular,
+  Flash24Regular
 } from "@fluentui/react-icons";
 import { PageProps } from '../../App';
 import { CurrentView, VIEW_TYPES } from "./ExcelEditItemModel";
@@ -23,6 +24,9 @@ export interface ExcelEditItemRibbonProps extends PageProps {
   saveItemCallback: () => Promise<void>;
   openSettingsCallback: () => Promise<void>;
   navigateToCanvasOverviewCallback: () => void;
+  startSparkSessionCallback?: () => Promise<void>;
+  isSparkSessionStarting?: boolean;
+  sparkSessionId?: string | null;
 }
 
 
@@ -36,6 +40,12 @@ const ExcelEditItemTabToolbar: React.FC<ExcelEditItemRibbonProps> = (props) => {
 
   const handleCanvasOverviewClick = () => {
     props.navigateToCanvasOverviewCallback();
+  };
+
+  const handleStartSparkSession = async () => {
+    if (props.startSparkSessionCallback) {
+      await props.startSparkSessionCallback();
+    }
   };
 
   async function onSaveAsClicked() {
@@ -69,6 +79,28 @@ const ExcelEditItemTabToolbar: React.FC<ExcelEditItemRibbonProps> = (props) => {
           onClick={handleSettingsClick} 
         />
       </Tooltip>
+
+      {/* Start Spark Session Button - Show in CANVAS_OVERVIEW and TABLE_EDITOR views */}
+      {(props.currentView === VIEW_TYPES.CANVAS_OVERVIEW || props.currentView === VIEW_TYPES.TABLE_EDITOR) && (
+        <Tooltip
+          content={
+            props.sparkSessionId 
+              ? `Spark session active: ${props.sparkSessionId.substring(0, 8)}...` 
+              : "Start Spark Session (makes data downloads faster)"
+          }
+          relationship="label">
+          <ToolbarButton
+            aria-label="Start Spark Session"
+            data-testid="item-editor-start-spark-btn"
+            icon={<Flash24Regular />}
+            disabled={props.isSparkSessionStarting || !!props.sparkSessionId}
+            onClick={handleStartSparkSession}
+            appearance={props.sparkSessionId ? "primary" : "subtle"}
+          >
+            {props.isSparkSessionStarting ? "Starting..." : props.sparkSessionId ? "Session Ready" : "Start Spark"}
+          </ToolbarButton>
+        </Tooltip>
+      )}
 
       {/* Getting Started Button */}
       {props.currentView === VIEW_TYPES.EMPTY && (

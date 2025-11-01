@@ -38,6 +38,7 @@ interface ExcelEditItemEditorDefaultProps {
   currentView: CurrentView;
   onNavigateToTableEditor?: () => void;
   onNavigateToCanvasOverview?: () => void;
+  sparkSessionId?: string | null;
 }
 
 export function ExcelEditItemEditorDefault({
@@ -45,7 +46,8 @@ export function ExcelEditItemEditorDefault({
   item,
   currentView,
   onNavigateToTableEditor,
-  onNavigateToCanvasOverview
+  onNavigateToCanvasOverview,
+  sparkSessionId
 }: ExcelEditItemEditorDefaultProps) {
   
   console.log('🎯 ExcelEditItemEditorDefault rendering with currentView:', currentView);
@@ -63,6 +65,7 @@ export function ExcelEditItemEditorDefault({
       workloadClient={workloadClient}
       item={item}
       onNavigateToCanvasOverview={onNavigateToCanvasOverview}
+      sparkSessionId={sparkSessionId}
     />;
   }
   
@@ -395,11 +398,13 @@ function CanvasOverviewView({
 function TableEditorView({
   workloadClient,
   item,
-  onNavigateToCanvasOverview
+  onNavigateToCanvasOverview,
+  sparkSessionId
 }: {
   workloadClient: WorkloadClientAPI;
   item?: ItemWithDefinition<ExcelEditItemDefinition>;
   onNavigateToCanvasOverview?: () => void;
+  sparkSessionId?: string | null;
 }) {
   const [currentEditingItem, setCurrentEditingItem] = useState<any>(null);
   const [excelOnlineUrl, setExcelOnlineUrl] = useState<string>('');
@@ -632,25 +637,24 @@ function TableEditorView({
       <div className="table-editor-actions">
         <Button
           appearance="primary"
-          icon={<TableSimple20Regular />}
+          icon={isLoadingExcel ? <Spinner size="tiny" /> : <TableSimple20Regular />}
+          disabled={isLoadingExcel}
           onClick={async () => {
-            console.log('📥 CLIENT-SIDE: Creating Excel file in browser...');
+            console.log('📥 CLIENT-SIDE: Creating Excel file with REAL DATA from Spark Livy...');
             setIsLoadingExcel(true);
             try {
               // Import the client-side Excel utility
               const { fetchAndDownloadLakehouseTable } = await import('../../utils/ExcelClientSide');
               
               if (currentEditingItem.source?.lakehouse?.id) {
-                // Has Lakehouse metadata - fetch schema
-                const tokenResult = await workloadClient.auth.acquireFrontendAccessToken({
-                  scopes: ['https://api.fabric.microsoft.com/Lakehouse.Read.All']
-                });
-                
+                // Has Lakehouse metadata - fetch real data using Spark Livy
+                // Note: SparkLivyClient handles its own token acquisition with proper scopes
                 await fetchAndDownloadLakehouseTable(
+                  workloadClient, // SparkLivyClient will get token internally with correct scopes
                   currentEditingItem.source.lakehouse.workspaceId,
                   currentEditingItem.source.lakehouse.id,
                   currentEditingItem.name,
-                  tokenResult.token
+                  sparkSessionId // Reuse existing Spark session if available
                 );
               } else {
                 // No Lakehouse metadata - use demo data
@@ -671,15 +675,57 @@ function TableEditorView({
                 });
               }
               
-              console.log('✅ Excel downloaded (Client-Side)');
+              console.log('✅ Excel downloaded with REAL DATA (Client-Side via Spark Livy)');
             } catch (error) {
-              console.error('❌ Client-side Excel creation failed:', error);
+              // Extract detailed error information
+              let errorMessage = 'Unknown error';
+              let errorDetails = '';
+              
+              if (error instanceof Error) {
+                errorMessage = error.message;
+                errorDetails = error.stack || '';
+              } else if (typeof error === 'object' && error !== null) {
+                // Handle error objects from auth/API calls
+                errorMessage = JSON.stringify(error, null, 2);
+              } else if (typeof error === 'string') {
+                errorMessage = error;
+              }
+              
+              console.error('❌ Client-side Excel creation failed:', {
+                error,
+                errorMessage,
+                errorType: typeof error,
+                errorConstructor: error?.constructor?.name
+              });
+              
+              // Check for common permission errors
+              const fullErrorText = `${errorMessage} ${errorDetails}`.toLowerCase();
+              
+              if (fullErrorText.includes('aadsts') || 
+                  fullErrorText.includes('consent') || 
+                  fullErrorText.includes('permission') ||
+                  fullErrorText.includes('unauthorized') ||
+                  fullErrorText.includes('401') ||
+                  fullErrorText.includes('403')) {
+                console.error(
+                  `⚠️ Permission Error Detected\n\n` +
+                  `The application needs the "Fabric.Extend" permission to access Spark Livy APIs.\n\n` +
+                  `To fix this:\n` +
+                  `1. Go to Azure Portal → Entra ID → App Registrations\n` +
+                  `2. Find app: ${process.env.FRONTEND_APPID}\n` +
+                  `3. Add API permission: Power BI Service → Fabric.Extend\n` +
+                  `4. Grant admin consent\n\n` +
+                  `Error Details:\n${errorMessage}`
+                );
+              } else {
+                console.error(`Failed to create Excel:\n\n${errorMessage}`)
+              }
             } finally {
               setIsLoadingExcel(false);
             }
           }}
         >
-          ⚡ Download Excel (Client-Side)
+          {isLoadingExcel ? '⏳ Querying Data via Spark...' : '⚡ Download Excel with Real Data'}
         </Button>
 
         <Button
@@ -690,7 +736,7 @@ function TableEditorView({
             createRealExcelWorkbook(currentEditingItem);
           }}
         >
-          Create Real Excel (Backend)
+          Create Real Excel (Backend - Legacy)
         </Button>
 
         <Button

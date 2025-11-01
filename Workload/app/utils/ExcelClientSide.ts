@@ -1,10 +1,14 @@
 /**
  * Client-side Excel creation utility
  * Creates Excel files entirely in the browser using ExcelJS
+ * Uses Spark Livy API for querying real lakehouse data
  * NO BACKEND REQUIRED!
  */
 
 import ExcelJS from 'exceljs';
+import { WorkloadClientAPI } from '@ms-fabric/workload-client';
+import { SparkLivyClient } from '../clients/SparkLivyClient';
+import { getOrCreateSparkSession, executeSparkQuery } from './SparkQueryHelper';
 
 export interface TableSchema {
   name: string;
@@ -151,174 +155,81 @@ export async function createAndDownloadExcel(options: ExcelCreationOptions): Pro
 }
 
 /**
- * Get SQL Analytics Endpoint connection string
- * Uses the SQL Endpoint API to get the connection string
- */
-async function getSqlEndpointConnectionString(
-  workspaceId: string,
-  sqlEndpointId: string,
-  token: string
-): Promise<string> {
-  const url = `https://api.fabric.microsoft.com/v1/workspaces/${workspaceId}/sqlEndpoints/${sqlEndpointId}/connectionString`;
-  
-  console.log('🔌 Fetching SQL Endpoint connection string...');
-  
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    }
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.warn(`⚠️ Failed to fetch SQL connection string: ${response.status} ${errorText}`);
-    return undefined;
-  }
-
-  const result = await response.json();
-  return result.connectionString;
-}
-
-/**
- * Get Lakehouse properties including SQL endpoint ID
- */
-async function getLakehouseProperties(
-  workspaceId: string,
-  lakehouseId: string,
-  token: string
-): Promise<{
-  oneLakeTablesPath: string;
-  oneLakeFilesPath: string;
-  sqlEndpointId?: string;
-}> {
-  const url = `https://api.fabric.microsoft.com/v1/workspaces/${workspaceId}/lakehouses/${lakehouseId}`;
-  
-  console.log('🔍 Fetching Lakehouse properties...');
-  
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    }
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to fetch Lakehouse properties: ${response.status} ${errorText}`);
-  }
-
-  const lakehouse = await response.json();
-  
-  return {
-    oneLakeTablesPath: lakehouse.properties?.oneLakeTablesPath,
-    oneLakeFilesPath: lakehouse.properties?.oneLakeFilesPath,
-    sqlEndpointId: lakehouse.properties?.sqlEndpointProperties?.id
-  };
-}
-
-/**
- * Fetch table data from Fabric Lakehouse and create Excel
+ * Fetch table data from Fabric Lakehouse using Spark Livy and create Excel
+ * @param workloadClient Workload client for authentication (SparkLivyClient will get tokens internally)
  * @param workspaceId Workspace ID
  * @param lakehouseId Lakehouse ID
  * @param tableName Table name
- * @param accessToken Fabric API access token
  * @returns Promise<void>
  */
 export async function fetchAndDownloadLakehouseTable(
+  workloadClient: WorkloadClientAPI,
   workspaceId: string,
   lakehouseId: string,
   tableName: string,
-  accessToken: string
+  existingSessionId?: string | null
 ): Promise<void> {
-  console.log('📊 Fetching table data from Lakehouse...');
+  console.log('📊 Fetching table data from Lakehouse using Spark Livy...');
   console.log('   Workspace:', workspaceId);
   console.log('   Lakehouse:', lakehouseId);
   console.log('   Table:', tableName);
+  if (existingSessionId) {
+    console.log('   Using existing Spark session:', existingSessionId);
+  }
 
   try {
-    // Step 1: Get Lakehouse properties (to get SQL endpoint ID)
-    const lakehouseProps = await getLakehouseProperties(workspaceId, lakehouseId, accessToken);
-    console.log('✅ Lakehouse properties fetched');
-    console.log('   SQL Endpoint ID:', lakehouseProps.sqlEndpointId);
+    // Create Spark Livy client (it will handle token acquisition internally with proper scopes)
+    const sparkClient = new SparkLivyClient(workloadClient);
     
-    // Step 2: Get SQL connection string from SQL Endpoint API
-    let sqlConnectionString: string | undefined;
-    if (lakehouseProps.sqlEndpointId) {
-      sqlConnectionString = await getSqlEndpointConnectionString(
-        workspaceId, 
-        lakehouseProps.sqlEndpointId, 
-        accessToken
-      );
-      console.log('✅ SQL Connection String:', sqlConnectionString);
-    }
-    
-    // Step 3: Fetch table metadata from Fabric API
-    const tablesUrl = `https://api.fabric.microsoft.com/v1/workspaces/${workspaceId}/lakehouses/${lakehouseId}/tables`;
-    console.log('📋 Fetching tables:', tablesUrl);
-
-    const response = await fetch(tablesUrl, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch tables: ${response.statusText}`);
-    }
-
-    const tablesData = await response.json();
-    console.log('✅ Tables fetched:', tablesData);
-
-    // Find our table
-    const table = tablesData.data?.find((t: any) => t.name === tableName);
-
-    if (!table) {
-      throw new Error(`Table '${tableName}' not found`);
-    }
-
-    console.log('✅ Found table:', table);
-
-    // Extract schema
-    let schema: TableSchema[] = [];
-    if (table.columns && Array.isArray(table.columns)) {
-      schema = table.columns.map((col: any) => ({
-        name: col.name,
-        dataType: col.type || 'string'
-      }));
-      console.log(`✅ Schema: ${schema.length} columns`);
+    // Step 1: Get or create Spark session (reuse if provided)
+    let session: any;
+    if (existingSessionId) {
+      console.log('♻️ Reusing existing Spark session:', existingSessionId);
+      session = { id: existingSessionId };
     } else {
-      // Fallback schema
-      schema = [
-        { name: 'Column1', dataType: 'string' },
-        { name: 'Column2', dataType: 'string' },
-        { name: 'Column3', dataType: 'string' }
-      ];
-      console.warn('⚠️ No columns in table metadata, using placeholder schema');
+      console.log('⏳ Getting or creating Spark session (this may take 30-60 seconds on first use)...');
+      session = await getOrCreateSparkSession(sparkClient, workspaceId, lakehouseId);
+      console.log('✅ Spark session ready:', session.id);
     }
-
-    // Create sample data (Fabric API doesn't have a direct query endpoint for rows)
-    const sampleData = [
-      schema.map(col => `Sample ${col.name}`),
-      schema.map(col => `Example data`),
-      schema.map(col => `More data`)
-    ];
-
-    console.log('💡 Note: Fabric REST API does not provide row data directly');
-    console.log('💡 Creating Excel with schema and sample data');
-    console.log('💡 For real data, use Power Query connection to Lakehouse in Excel');
-
-    // Create and download Excel with SQL connection info
+    
+    // Step 2: Execute SQL query to get table data
+    console.log('🔍 Executing query via Spark Livy...');
+    const queryResult = await executeSparkQuery(sparkClient, workspaceId, lakehouseId, session.id, tableName, 1000);
+    console.log('✅ Query executed successfully');
+    console.log('   Rows fetched:', queryResult.rows?.length || 0);
+    console.log('   Execution time:', queryResult.executionTimeMs, 'ms');
+    
+    // Step 3: Parse results and create Excel
+    if (!queryResult.rows || queryResult.rows.length === 0) {
+      throw new Error('No data returned from query');
+    }
+    
+    // Extract schema from first row
+    const firstRow = queryResult.rows[0];
+    const schema: TableSchema[] = Object.keys(firstRow).map(key => ({
+      name: key,
+      dataType: typeof firstRow[key]
+    }));
+    
+    // Convert data to 2D array
+    const data = queryResult.rows.map(row => 
+      Object.values(row).map(val => val === null ? '' : String(val))
+    );
+    
+    console.log('💡 Creating Excel with REAL DATA from Lakehouse!');
+    console.log(`   Schema: ${schema.length} columns`);
+    console.log(`   Data: ${data.length} rows`);
+    
+    // Step 4: Create and download Excel with real data
     await createAndDownloadExcel({
       tableName,
       schema,
-      data: sampleData,
-      sqlConnectionString: sqlConnectionString
+      data
     });
-
-  } catch (error) {
-    console.error('❌ Failed to fetch and download:', error);
+    
+    console.log('✅ Excel file created with REAL DATA from Spark Livy!');
+  } catch (error: any) {
+    console.error('❌ Error fetching table data:', error);
     throw error;
   }
 }
