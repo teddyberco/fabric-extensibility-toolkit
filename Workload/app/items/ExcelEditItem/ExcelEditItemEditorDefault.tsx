@@ -498,52 +498,6 @@ function TableEditorView({
           console.log('💡 Note: Schema not available from OneLake catalog');
           console.log('💡 Users can connect to Lakehouse using Power Query in Excel to get real schema and data');
         }
-          console.warn('⚠️  No schema found in table metadata, attempting Spark fetch...');
-          
-          try {
-            // Initialize Lakehouse service
-            const { LakehouseDataService } = await import('../../services/LakehouseDataService');
-            const lakehouseService = LakehouseDataService.getInstance();
-            lakehouseService.initialize(workloadClient);
-            
-            // Fetch real table data using Spark
-            const realData = await lakehouseService.fetchRealTableData(
-              workspaceId,
-              lakehouseId,
-              tableName,
-              10000 // Fetch up to 10,000 rows
-            );
-            
-            console.log('✅ Successfully fetched real Lakehouse data:');
-            console.log(`   Rows: ${realData.rowCount}`);
-            console.log(`   Columns: ${realData.schema.length}`);
-            
-            // Use real data
-            schema = realData.schema;
-            tableData = realData.rows;
-            
-          } catch (sparkError) {
-            console.error('❌ Failed to fetch real Lakehouse data:', sparkError);
-            console.warn('⚠️  Falling back to demo data');
-            console.warn('💡 Possible reasons:');
-            console.warn('   1. Spark Livy API may not be enabled in this Fabric workspace');
-            console.warn('   2. Insufficient permissions to create Spark sessions');
-            console.warn('   3. Lakehouse or table does not exist');
-            console.warn('   4. Network or authentication issues');
-            
-            // Fallback to demo data
-            tableData = [
-              ['CUST001', 'John Smith', 'john@example.com', 'Active'],
-              ['CUST002', 'Jane Doe', 'jane@example.com', 'Active'],
-              ['CUST003', 'Bob Johnson', 'bob@example.com', 'Inactive']
-            ];
-            schema = [
-              { name: 'Customer ID', dataType: 'string' },
-              { name: 'Name', dataType: 'string' },
-              { name: 'Email', dataType: 'string' },
-              { name: 'Status', dataType: 'string' }
-            ];
-          }
         
       } else {
         console.warn('⚠️  No Lakehouse metadata found, using demo data');
@@ -679,19 +633,71 @@ function TableEditorView({
         <Button
           appearance="primary"
           icon={<TableSimple20Regular />}
+          onClick={async () => {
+            console.log('📥 CLIENT-SIDE: Creating Excel file in browser...');
+            setIsLoadingExcel(true);
+            try {
+              // Import the client-side Excel utility
+              const { fetchAndDownloadLakehouseTable } = await import('../../utils/ExcelClientSide');
+              
+              if (currentEditingItem.source?.lakehouse?.id) {
+                // Has Lakehouse metadata - fetch schema
+                const tokenResult = await workloadClient.auth.acquireFrontendAccessToken({
+                  scopes: ['https://api.fabric.microsoft.com/Lakehouse.Read.All']
+                });
+                
+                await fetchAndDownloadLakehouseTable(
+                  currentEditingItem.source.lakehouse.workspaceId,
+                  currentEditingItem.source.lakehouse.id,
+                  currentEditingItem.name,
+                  tokenResult.token
+                );
+              } else {
+                // No Lakehouse metadata - use demo data
+                const { createAndDownloadExcel } = await import('../../utils/ExcelClientSide');
+                await createAndDownloadExcel({
+                  tableName: currentEditingItem.name,
+                  schema: [
+                    { name: 'Customer ID', dataType: 'string' },
+                    { name: 'Name', dataType: 'string' },
+                    { name: 'Email', dataType: 'string' },
+                    { name: 'Status', dataType: 'string' }
+                  ],
+                  data: [
+                    ['CUST001', 'John Smith', 'john@example.com', 'Active'],
+                    ['CUST002', 'Jane Doe', 'jane@example.com', 'Active'],
+                    ['CUST003', 'Bob Johnson', 'bob@example.com', 'Inactive']
+                  ]
+                });
+              }
+              
+              console.log('✅ Excel downloaded (Client-Side)');
+            } catch (error) {
+              console.error('❌ Client-side Excel creation failed:', error);
+            } finally {
+              setIsLoadingExcel(false);
+            }
+          }}
+        >
+          ⚡ Download Excel (Client-Side)
+        </Button>
+
+        <Button
+          appearance="secondary"
+          icon={<TableSimple20Regular />}
           onClick={() => {
             console.log('🎯 Creating real Excel workbook for table:', currentEditingItem.name);
             createRealExcelWorkbook(currentEditingItem);
           }}
         >
-          Create Real Excel
+          Create Real Excel (Backend)
         </Button>
 
         <Button
           appearance="secondary"
           icon={<TableSimple20Regular />}
           onClick={async () => {
-            console.log('🧪 Testing Excel creation with demo data (bypassing Spark)...');
+            console.log('🧪 Testing Excel creation with demo data (bypassing SQL fetch)...');
             setIsLoadingExcel(true);
             try {
               // Create a test item with demo data
@@ -701,7 +707,7 @@ function TableEditorView({
                 source: {} // No lakehouse metadata = will use demo data
               };
               
-              // This will skip Spark and use demo data directly
+              // This will skip SQL fetch and use demo data directly
               await createRealExcelWorkbook(testItem);
               console.log('✅ Demo data Excel test completed');
             } catch (error) {

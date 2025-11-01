@@ -7,6 +7,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const { ConfidentialClientApplication } = require('@azure/msal-node');
+const { LakehouseSqlService } = require('./lakehouseSqlService');
 
 class WOPIHostEndpoints {
   constructor() {
@@ -1081,9 +1082,47 @@ class WOPIHostEndpoints {
    */
   async createRealExcel(req, res) {
     try {
-      const { tableName, tableData, schema } = req.body;
+      const { tableName, tableData, schema, workspaceId, lakehouseId, accessToken } = req.body;
       
       console.log(`🎯 Creating real Excel workbook for: ${tableName}`);
+
+      // NEW STRATEGY: Use SQL Analytics Endpoint for fast data reads
+      let finalTableData = tableData;
+      let finalSchema = schema;
+      let dataSource = 'provided';
+
+      // If workspaceId and lakehouseId are provided, try to fetch real data via SQL
+      if (workspaceId && lakehouseId && accessToken) {
+        try {
+          console.log('📊 Attempting to fetch real Lakehouse data via SQL Analytics Endpoint...');
+          console.log('   Workspace:', workspaceId);
+          console.log('   Lakehouse:', lakehouseId);
+          console.log('   Table:', tableName);
+
+          const sqlService = new LakehouseSqlService();
+          const realData = await sqlService.fetchTableData(
+            workspaceId,
+            lakehouseId,
+            tableName,
+            accessToken,
+            10000 // Limit to 10k rows for Excel
+          );
+
+          if (realData && realData.schema && realData.rows) {
+            console.log('✅ Real Lakehouse data fetched successfully via SQL!');
+            console.log(`   Rows: ${realData.rows.length}`);
+            console.log(`   Columns: ${realData.schema.length}`);
+            finalTableData = realData.rows;
+            finalSchema = realData.schema;
+            dataSource = 'lakehouse-sql';
+          }
+        } catch (sqlError) {
+          console.error('⚠️ SQL fetch failed, using provided/demo data:', sqlError.message);
+          dataSource = 'fallback';
+        }
+      } else {
+        console.log('⚠️ Missing Lakehouse connection info, using provided/demo data');
+      }
 
       // Check if Azure Entra app authentication is configured for delegated permissions
       const hasAzureConfig = process.env.AZURE_CLIENT_ID && process.env.AZURE_TENANT_ID;
@@ -1093,14 +1132,15 @@ class WOPIHostEndpoints {
         return res.status(500).json({
           success: false,
           error: 'Real Excel integration requires Azure Entra app configuration. Set AZURE_CLIENT_ID and AZURE_TENANT_ID in .env.dev',
-          fallbackMessage: 'Real Excel creation failed - falling back to demo Excel'
+          fallbackMessage: 'Real Excel creation failed - falling back to demo Excel',
+          dataSource
         });
       }
 
       // Try to create real Excel workbook using Azure Entra app
       let result;
       console.log('🔐 Using Azure Entra app authentication for real Excel creation...');
-      result = await this.createRealExcelWithEntraApp(tableName, tableData, schema);
+      result = await this.createRealExcelWithEntraApp(tableName, finalTableData, finalSchema);
 
       if (result.success) {
         res.json({
@@ -1109,7 +1149,8 @@ class WOPIHostEndpoints {
           fileId: result.fileId,
           fileName: result.fileName,
           webUrl: result.webUrl,
-          message: 'Real Excel workbook created successfully'
+          message: `Real Excel workbook created successfully (data source: ${dataSource})`,
+          dataSource
         });
       } else if (result.requiresAuth) {
         // Return auth URL for user consent
@@ -1118,13 +1159,15 @@ class WOPIHostEndpoints {
           requiresAuth: true,
           authUrl: result.authUrl,
           message: result.message,
-          instructions: result.instructions
+          instructions: result.instructions,
+          dataSource
         });
       } else {
         res.status(500).json({
           success: false,
           error: result.error,
-          fallbackMessage: 'Real Excel creation failed - falling back to demo Excel'
+          fallbackMessage: 'Real Excel creation failed - falling back to demo Excel',
+          dataSource
         });
       }
 

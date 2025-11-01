@@ -163,8 +163,9 @@ export class LakehouseDataService {
         // Poll for the session to be ready (max 5 minutes)
         const maxPolls = 60; // 60 polls * 5 seconds = 5 minutes
         let pollCount = 0;
+        let operationCompleted = false;
         
-        while (pollCount < maxPolls) {
+        while (pollCount < maxPolls && !operationCompleted) {
           pollCount++;
           console.log(`   Poll attempt ${pollCount}/${maxPolls}...`);
           
@@ -172,21 +173,35 @@ export class LakehouseDataService {
           await new Promise(resolve => setTimeout(resolve, 5000));
           
           try {
-            // List sessions to find the one we just created
-            const sessions = await this.sparkLivyClient!.listSessions(workspaceId, lakehouseId);
-            console.log(`   Found ${sessions.length} total sessions`);
+            // Poll the operation status endpoint
+            const operationStatus = await this.sparkLivyClient!.getOperationStatus(
+              workspaceId,
+              lakehouseId,
+              session.operationId
+            );
             
-            // Find our session by name
-            const ourSession = sessions.find((s: any) => s.name === sessionRequest.name);
+            console.log(`   Operation status:`, operationStatus);
             
-            if (ourSession && ourSession.id) {
-              console.log('✅ Session created and ready!');
-              console.log('   Session ID:', ourSession.id);
-              console.log('   Session state:', ourSession.state);
-              session = ourSession;
-              break;
+            // Check if operation completed successfully
+            if (operationStatus.status === 'Succeeded' && operationStatus.result) {
+              console.log('✅ Operation completed successfully!');
+              console.log('   Result:', operationStatus.result);
+              
+              // Extract session info from result
+              if (operationStatus.result.id) {
+                session = operationStatus.result; // Use the completed session
+                operationCompleted = true;
+                console.log('✅ Session created!');
+                console.log('   Session ID:', session.id);
+                console.log('   Session state:', session.state);
+              } else {
+                console.error('⚠️  Operation succeeded but no session ID in result:', operationStatus.result);
+              }
+            } else if (operationStatus.status === 'Failed') {
+              console.error('❌ Operation failed:', operationStatus);
+              throw new Error(`Session creation operation failed: ${JSON.stringify(operationStatus)}`);
             } else {
-              console.log('   Session not ready yet, continuing to poll...');
+              console.log(`   Operation still in progress (status: ${operationStatus.status || 'Unknown'}), continuing to poll...`);
             }
           } catch (pollError) {
             console.warn('⚠️  Poll attempt failed:', pollError);
@@ -194,7 +209,7 @@ export class LakehouseDataService {
           }
         }
         
-        if (!session.id) {
+        if (!operationCompleted || !session.id) {
           throw new Error(`Session creation timed out after ${maxPolls * 5} seconds. The session may still be starting.`);
         }
       }
