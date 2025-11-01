@@ -93,3 +93,72 @@ Use the [Project structure](./docs/Project_Structure.md) to get a better underst
 ### Setting things up
 
 To set things up follow the [Setup Guide](./docs/Project_Setup.md).
+
+---
+
+## 📊 Current Development Status (Excel Export Feature)
+
+### ✅ Completed Work
+
+**Client-Side Excel Generation** (`ExcelClientSide.ts` - 325 lines)
+- ✅ Pure browser-based Excel creation using ExcelJS v4.3.0
+- ✅ Integrated with Fabric REST APIs:
+  - `GET /v1/workspaces/{id}/lakehouses/{id}` - Lakehouse properties
+  - `GET /v1/workspaces/{id}/lakehouses/{id}/tables` - Table schema
+  - `GET /v1/workspaces/{id}/sqlEndpoints/{id}/connectionString` - SQL connection string
+- ✅ Two-worksheet Excel output:
+  - **Sheet 1**: Table structure with column names and sample data
+  - **Sheet 2**: "📖 How to Get Real Data" with SQL connection instructions
+- ✅ Professional styling: Microsoft blue headers, borders, auto-sized columns
+- ✅ Browser download functionality via Blob API
+- ✅ Error handling and fallback schemas
+- ✅ Removed problematic Spark Livy polling code (was causing 400 errors)
+
+**UI Integration** (`ExcelEditItemEditorDefault.tsx`)
+- ✅ Added "⚡ Download Excel (Client-Side)" button
+- ✅ Clean console (non-passive event warnings are cosmetic from third-party libraries)
+
+### ⚠️ Current Limitation
+
+**Excel files contain SAMPLE DATA ONLY** - Not real lakehouse rows
+
+**Why?** 
+- Browser cannot execute T-SQL queries directly (no TDS protocol support)
+- Fabric has no REST API for synchronous SQL query execution
+- Spark Job API is async and writes to storage (30-60+ second execution time)
+
+### 🔧 Next Steps (Resume Tomorrow)
+
+**Task 1: Create Backend SQL Query Endpoint** (HIGH PRIORITY)
+- File: `devServer/lakehouseApi.js`
+- Endpoint: `POST /api/lakehouse/query-sql`
+- Implementation:
+  ```javascript
+  // Request: { workspaceId, sqlEndpointId, tableName, token }
+  // 1. Get SQL connection string via SQL Endpoint API
+  // 2. Authenticate with scope: https://database.windows.net/.default
+  // 3. Connect using `mssql` npm package (TDS protocol)
+  // 4. Execute: SELECT TOP 10000 * FROM [tableName]
+  // 5. Return: { rows: [...], schema: [...] }
+  ```
+
+**Task 2: Update Frontend** (`ExcelClientSide.ts`)
+- Modify `fetchAndDownloadLakehouseTable()` to call backend endpoint
+- Replace sample data with real query results
+- Keep SQL connection instructions worksheet
+
+**Task 3: Authentication Scope**
+- Backend needs token with `https://database.windows.net/.default` scope
+- Current frontend token only has `Lakehouse.Read.All` scope
+- Options:
+  1. Frontend requests both tokens upfront
+  2. Backend uses service principal
+  3. Backend proxies token exchange
+
+**Dependencies:**
+- `mssql` npm package (check if already installed)
+- SQL Analytics Endpoint authentication setup
+
+**Estimated Time:** 2-3 hours for complete implementation
+
+---
