@@ -373,3 +373,46 @@
   padding: 0 !important;
   text-align: left !important;
 }
+
+/* Excel Info Banner */
+.excel-info-banner {
+  padding: 16px 24px;
+  background: #e1f5fe;
+  border-left: 4px solid #0078d4;
+  margin: 0;
+  text-align: left;
+}
+
+.excel-info-banner strong {
+  color: #0078d4;
+  font-weight: 600;
+}
+
+/* Excel Online Warning Banner */
+.excel-online-warning {
+  padding: 20px;
+  text-align: center;
+  background: #fff5cc;
+  border: 1px solid #ffc107;
+  border-radius: 4px;
+  margin: 10px;
+}
+
+.excel-online-warning strong {
+  color: #ff6f00;
+}
+
+/* Table Editor iframe container */
+.table-editor-iframe-container-clean {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.table-editor-iframe {
+  width: 100%;
+  height: 600px;
+  border: 1px solid #ccc;
+  flex: 1;
+}

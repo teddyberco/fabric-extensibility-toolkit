@@ -8,6 +8,8 @@ import {
   DatabaseSearch20Regular,
   TableSimple20Regular,
   Add20Regular,
+  ArrowDownload20Regular,
+  WindowNew20Regular,
 } from "@fluentui/react-icons";
 import { WorkloadClientAPI } from "@ms-fabric/workload-client";
 import { ItemWithDefinition, saveItemDefinition } from "../../controller/ItemCRUDController";
@@ -132,9 +134,19 @@ function CanvasOverviewView({
       
       console.log('📊 OneLake catalog result:', result);
       console.log('📊 Selected path:', result?.selectedPath);
+      console.log('📊 Workspace ID:', result?.workspaceId);
+      console.log('📊 Lakehouse ID:', result?.id);
       
       if (result && result.selectedPath) {
         console.log('✅ Selected path from OneLake:', result.selectedPath);
+        
+        // Extract critical IDs for Lakehouse data fetching
+        const workspaceId = result.workspaceId; // Workspace containing the Lakehouse
+        const lakehouseId = result.id; // Lakehouse item ID
+        
+        console.log('🔑 Captured IDs for Spark data fetching:');
+        console.log('   Workspace ID:', workspaceId);
+        console.log('   Lakehouse ID:', lakehouseId);
         
         try {
           const pathSegments = result.selectedPath.split('/');
@@ -155,23 +167,27 @@ function CanvasOverviewView({
               const table = pathSegments[tableIndex];
               
               // Extract lakehouse name (if available)
-              let lakehouse = 'Unknown Lakehouse';
+              let lakehouseName = 'Unknown Lakehouse';
               if (tablesIndex > 0) {
-                lakehouse = pathSegments[tablesIndex - 1];
+                lakehouseName = pathSegments[tablesIndex - 1];
               } else if (result.displayName) {
-                lakehouse = result.displayName;
+                lakehouseName = result.displayName;
               }
               
-              console.log('🏠 Extracted lakehouse:', lakehouse);
+              console.log('🏠 Extracted lakehouse name:', lakehouseName);
               console.log('📊 Extracted table:', table);
             
               const newCanvasItem: CanvasItem = {
-                id: `${lakehouse}-${table}`,
+                id: `${lakehouseId}-${table}`, // Use lakehouse ID for uniqueness
                 type: 'lakehouse-table',
                 name: table,
                 displayName: table,
                 source: {
-                  lakehouse: { id: lakehouse, name: lakehouse, workspaceId: '' },
+                  lakehouse: { 
+                    id: lakehouseId,           // ✅ REAL Lakehouse ID
+                    name: lakehouseName, 
+                    workspaceId: workspaceId   // ✅ REAL Workspace ID
+                  },
                   table: { name: table, displayName: table, schema: [], rowCount: 0 }
                 },
                 lastEdited: new Date().toISOString()
@@ -256,6 +272,7 @@ function CanvasOverviewView({
 
   const handleEditTable = (canvasItem: CanvasItem) => {
     console.log('Opening table editor for:', canvasItem.name);
+    console.log('📋 Full canvas item data:', canvasItem);
     
     const currentState = item?.definition?.state as ExcelEditWorkflowState || {};
     const updatedState: ExcelEditWorkflowState = {
@@ -265,11 +282,13 @@ function CanvasOverviewView({
         id: canvasItem.id,
         type: canvasItem.type,
         name: canvasItem.name,
-        displayName: canvasItem.displayName
-      }
+        displayName: canvasItem.displayName,
+        // ✅ IMPORTANT: Store full canvas item for Lakehouse data access
+        source: canvasItem.source  // Includes lakehouse {id, name, workspaceId} and table details
+      } as any // Extended to include source
     };
     
-    console.log('🔄 Saving currentEditingItem to state:', updatedState.currentEditingItem);
+    console.log('🔄 Saving currentEditingItem with Lakehouse metadata to state:', updatedState.currentEditingItem);
     console.log('🔄 Setting workflowStep to:', updatedState.workflowStep);
     
     if (workloadClient && item) {
@@ -421,27 +440,133 @@ function TableEditorView({
     setIsLoadingExcel(true);
     try {
       console.log('🎯 Creating real Excel workbook for table:', editingItem.name);
+      console.log('📋 Editing item data:', editingItem);
       
-      // Prepare table data for real Excel creation
-      const tableData = [
-        ['Customer ID', 'Name', 'Email', 'Status'], // Headers will be handled by schema
-        ['CUST001', 'John Smith', 'john@example.com', 'Active'],
-        ['CUST002', 'Jane Doe', 'jane@example.com', 'Active'],
-        ['CUST003', 'Bob Johnson', 'bob@example.com', 'Inactive'],
-        ['CUST004', 'Alice Wilson', 'alice@example.com', 'Active'],
-        ['CUST005', 'Charlie Brown', 'charlie@example.com', 'Pending']
-      ];
-
-      const schema = [
-        { name: 'Customer ID', dataType: 'string' },
-        { name: 'Name', dataType: 'string' },
-        { name: 'Email', dataType: 'string' },
-        { name: 'Status', dataType: 'string' }
-      ];
+      // Check if we have lakehouse metadata for real data fetching
+      const hasLakehouseMetadata = editingItem.source?.lakehouse?.id && editingItem.source?.lakehouse?.workspaceId;
+      
+      let tableData: any[] = [];
+      let schema: any[] = [];
+      
+      if (hasLakehouseMetadata) {
+        // ✅ USE REAL TABLE SCHEMA FROM LAKEHOUSE
+        const workspaceId = editingItem.source.lakehouse.workspaceId;
+        const lakehouseId = editingItem.source.lakehouse.id;
+        const tableName = editingItem.name;
+        
+        console.log('� Using REAL table schema from Lakehouse...');
+        console.log('   Workspace ID:', workspaceId);
+        console.log('   Lakehouse ID:', lakehouseId);
+        console.log('   Table Name:', tableName);
+        
+        // Check if we have schema from the table metadata
+        if (editingItem.source?.table?.schema && Array.isArray(editingItem.source.table.schema) && editingItem.source.table.schema.length > 0) {
+          schema = editingItem.source.table.schema.map((col: any) => ({
+            name: col.name,
+            dataType: col.dataType || 'string'
+          }));
+          
+          console.log(`✅ Using real table schema with ${schema.length} columns:`, schema);
+          
+          // Add sample rows showing the data types
+          tableData = [
+            schema.map(col => `(${col.dataType})`),  // Header showing types
+            schema.map(col => `Sample ${col.name}`)  // Sample row
+          ];
+          
+          console.log('📝 Created Excel template with real schema');
+          console.log('💡 Users can connect to Lakehouse using Power Query in Excel');
+          
+        } else {
+          console.warn('⚠️  No schema found in table metadata, using placeholder columns...');
+          
+          // Create placeholder schema for the table
+          schema = [
+            { name: 'Column1', dataType: 'string' },
+            { name: 'Column2', dataType: 'string' },
+            { name: 'Column3', dataType: 'string' },
+            { name: 'Column4', dataType: 'string' },
+            { name: 'Column5', dataType: 'string' }
+          ];
+          
+          tableData = [
+            ['(string)', '(string)', '(string)', '(string)', '(string)'],
+            [`${tableName} data`, 'Sample', 'Sample', 'Sample', 'Sample']
+          ];
+          
+          console.log('📝 Created Excel template with placeholder columns');
+          console.log('💡 Note: Schema not available from OneLake catalog');
+          console.log('💡 Users can connect to Lakehouse using Power Query in Excel to get real schema and data');
+        }
+          console.warn('⚠️  No schema found in table metadata, attempting Spark fetch...');
+          
+          try {
+            // Initialize Lakehouse service
+            const { LakehouseDataService } = await import('../../services/LakehouseDataService');
+            const lakehouseService = LakehouseDataService.getInstance();
+            lakehouseService.initialize(workloadClient);
+            
+            // Fetch real table data using Spark
+            const realData = await lakehouseService.fetchRealTableData(
+              workspaceId,
+              lakehouseId,
+              tableName,
+              10000 // Fetch up to 10,000 rows
+            );
+            
+            console.log('✅ Successfully fetched real Lakehouse data:');
+            console.log(`   Rows: ${realData.rowCount}`);
+            console.log(`   Columns: ${realData.schema.length}`);
+            
+            // Use real data
+            schema = realData.schema;
+            tableData = realData.rows;
+            
+          } catch (sparkError) {
+            console.error('❌ Failed to fetch real Lakehouse data:', sparkError);
+            console.warn('⚠️  Falling back to demo data');
+            console.warn('💡 Possible reasons:');
+            console.warn('   1. Spark Livy API may not be enabled in this Fabric workspace');
+            console.warn('   2. Insufficient permissions to create Spark sessions');
+            console.warn('   3. Lakehouse or table does not exist');
+            console.warn('   4. Network or authentication issues');
+            
+            // Fallback to demo data
+            tableData = [
+              ['CUST001', 'John Smith', 'john@example.com', 'Active'],
+              ['CUST002', 'Jane Doe', 'jane@example.com', 'Active'],
+              ['CUST003', 'Bob Johnson', 'bob@example.com', 'Inactive']
+            ];
+            schema = [
+              { name: 'Customer ID', dataType: 'string' },
+              { name: 'Name', dataType: 'string' },
+              { name: 'Email', dataType: 'string' },
+              { name: 'Status', dataType: 'string' }
+            ];
+          }
+        
+      } else {
+        console.warn('⚠️  No Lakehouse metadata found, using demo data');
+        
+        // Use demo data
+        tableData = [
+          ['CUST001', 'John Smith', 'john@example.com', 'Active'],
+          ['CUST002', 'Jane Doe', 'jane@example.com', 'Active'],
+          ['CUST003', 'Bob Johnson', 'bob@example.com', 'Inactive'],
+          ['CUST004', 'Alice Wilson', 'alice@example.com', 'Active'],
+          ['CUST005', 'Charlie Brown', 'charlie@example.com', 'Pending']
+        ];
+        schema = [
+          { name: 'Customer ID', dataType: 'string' },
+          { name: 'Name', dataType: 'string' },
+          { name: 'Email', dataType: 'string' },
+          { name: 'Status', dataType: 'string' }
+        ];
+      }
 
       const baseUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:60006' : window.location.origin;
       
-      // Call the real Excel creation endpoint
+      // Call the real Excel creation endpoint with real or demo data
       const response = await fetch(`${baseUrl}/api/excel/create-real`, {
         method: 'POST',
         headers: {
@@ -449,7 +574,7 @@ function TableEditorView({
         },
         body: JSON.stringify({
           tableName: editingItem.name,
-          tableData: tableData.slice(1), // Remove headers (schema defines them)
+          tableData: tableData, // Real Lakehouse data or fallback demo data
           schema: schema
         })
       });
@@ -459,21 +584,28 @@ function TableEditorView({
       if (result.success) {
         console.log('✅ Real Excel workbook created successfully:', result);
         
-        // Set up local Excel viewer instead of Excel Online
-        setExcelFileInfo({
-          fileId: result.fileId,
-          fileName: result.fileName || `${editingItem.name}.xlsx`,
-          tableName: editingItem.name
-        });
-        setShowLocalViewer(true);
+        // Try to use Excel Online embed first (real Excel experience)
+        if (result.embedUrl && result.embedUrl.includes('officeapps.live.com')) {
+          console.log('🌐 Excel Online embed URL available:', result.embedUrl);
+          console.log('⚠️  Note: Excel Online embedding from localhost has limitations');
+          console.log('💡 Recommendation: Use "Download Excel File" for best experience');
+          setExcelOnlineUrl(result.embedUrl);
+          setShowLocalViewer(false);
+        } 
+        // Fallback to local viewer (best for development)
+        else {
+          console.log('📊 Using Local Excel Viewer (best for localhost development)');
+          setExcelFileInfo({
+            fileId: result.fileId,
+            fileName: result.fileName || `${editingItem.name}.xlsx`,
+            tableName: editingItem.name
+          });
+          setShowLocalViewer(true);
+          setExcelOnlineUrl('');
+        }
         
-        // Clear the Excel Online URL since we're using local viewer
-        setExcelOnlineUrl('');
-        
-        // Show success message
-        console.log('🎉 Local Excel Viewer is now ready!');
+        console.log('✅ Excel interface ready!');
         console.log('📁 File ID:', result.fileId);
-        console.log('� Using local Excel viewer instead of Online Excel');
         
       } else {
         console.error('❌ Failed to create real Excel workbook:', result.error || 'Unknown error');
@@ -557,6 +689,80 @@ function TableEditorView({
 
         <Button
           appearance="secondary"
+          icon={<TableSimple20Regular />}
+          onClick={async () => {
+            console.log('🧪 Testing Excel creation with demo data (bypassing Spark)...');
+            setIsLoadingExcel(true);
+            try {
+              // Create a test item with demo data
+              const testItem = {
+                ...currentEditingItem,
+                name: currentEditingItem.name,
+                source: {} // No lakehouse metadata = will use demo data
+              };
+              
+              // This will skip Spark and use demo data directly
+              await createRealExcelWorkbook(testItem);
+              console.log('✅ Demo data Excel test completed');
+            } catch (error) {
+              console.error('❌ Demo data Excel test failed:', error);
+              setIsLoadingExcel(false);
+            }
+          }}
+        >
+          Test with Demo Data
+        </Button>
+
+        {excelFileInfo && excelFileInfo.fileId && (
+          <>
+            <Button
+              appearance="secondary"
+              icon={<ArrowDownload20Regular />}
+              onClick={() => {
+                // Download the Excel file to open in desktop Excel
+                const baseUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:60006' : window.location.origin;
+                const downloadUrl = `${baseUrl}/wopi/files/${excelFileInfo.fileId}/contents`;
+                
+                console.log('📥 Downloading Excel file...');
+                console.log('   Download URL:', downloadUrl);
+                
+                // Create download link
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = excelFileInfo.fileName || `${currentEditingItem.name}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                console.log('✅ Excel file download started');
+              }}
+            >
+              Download Excel File
+            </Button>
+            
+            <Button
+              appearance="outline"
+              icon={<WindowNew20Regular />}
+              onClick={() => {
+                // Try to open in Excel Online (will open in new tab)
+                const baseUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:60006' : window.location.origin;
+                const wopiUrl = `${baseUrl}/wopi/files/${excelFileInfo.fileId}`;
+                const excelOnlineUrl = `https://excel.officeapps.live.com/x/_layouts/xlviewerinternal.aspx?ui=en-US&rs=en-US&WOPISrc=${encodeURIComponent(wopiUrl)}`;
+                
+                console.log('🌐 Attempting to open in Excel Online...');
+                console.log('   Note: This may not work from localhost due to CORS/security restrictions');
+                console.log('   WOPI URL:', wopiUrl);
+                
+                window.open(excelOnlineUrl, '_blank');
+              }}
+            >
+              Try Excel Online (New Tab)
+            </Button>
+          </>
+        )}
+
+        <Button
+          appearance="secondary"
           icon={<Add20Regular />}
           onClick={() => {
             console.log('💾 Saving changes to lakehouse for table:', currentEditingItem.name);
@@ -598,30 +804,49 @@ function TableEditorView({
       )}
 
       {!isLoadingExcel && showLocalViewer && excelFileInfo && (
-        <LocalExcelViewer
-          fileId={excelFileInfo.fileId}
-          fileName={excelFileInfo.fileName}
-          tableName={excelFileInfo.tableName}
-          onClose={() => {
-            setShowLocalViewer(false);
-            setExcelFileInfo(null);
-            if (onNavigateToCanvasOverview) {
-              onNavigateToCanvasOverview();
-            }
-          }}
-        />
+        <>
+          <div className="excel-info-banner">
+            <Text size={400} weight="semibold">
+              💡 For the REAL Excel experience:
+            </Text>
+            <Text size={300} style={{ marginTop: '4px', display: 'block' }}>
+              Click <strong>"Download Excel File"</strong> button above to open this data in Microsoft Excel desktop app
+            </Text>
+          </div>
+          <LocalExcelViewer
+            fileId={excelFileInfo.fileId}
+            fileName={excelFileInfo.fileName}
+            tableName={excelFileInfo.tableName}
+            onClose={() => {
+              setShowLocalViewer(false);
+              setExcelFileInfo(null);
+              if (onNavigateToCanvasOverview) {
+                onNavigateToCanvasOverview();
+              }
+            }}
+          />
+        </>
       )}
 
       {!isLoadingExcel && !showLocalViewer && excelOnlineUrl && (
         <div className="table-editor-iframe-container-clean">
+          <div className="excel-online-warning">
+            <Text size={400} weight="semibold">⚠️ Excel Online cannot embed from localhost</Text>
+            <Text size={300} style={{ display: 'block', marginTop: '8px' }}>
+              For the best experience, use the <strong>"Download Excel File"</strong> button above to open in desktop Excel.
+            </Text>
+          </div>
           <iframe
             src={excelOnlineUrl}
             className="table-editor-iframe"
-            allow="clipboard-read; clipboard-write"
-            sandbox="allow-scripts allow-forms allow-popups"
-            title={`Excel Interface - ${currentEditingItem.name}`}
+            title={`Excel Online - ${currentEditingItem.name}`}
             onLoad={(e) => {
-              console.log('✅ Excel demo interface loaded successfully');
+              console.log('✅ Excel Online iframe loaded (may have errors due to localhost restrictions)');
+              console.log('📍 Loaded URL:', excelOnlineUrl);
+            }}
+            onError={(e) => {
+              console.error('❌ Excel Online iframe failed to load');
+              console.error('   URL:', excelOnlineUrl);
             }}
           />
         </div>

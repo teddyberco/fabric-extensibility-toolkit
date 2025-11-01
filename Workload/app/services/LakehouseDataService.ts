@@ -1,6 +1,9 @@
+import { WorkloadClientAPI } from "@ms-fabric/workload-client";
+import { SparkLivyClient } from "../clients/SparkLivyClient";
+
 /**
  * Lakehouse Data Service
- * Handles data retrieval from Microsoft Fabric Lakehouse
+ * Handles data retrieval from Microsoft Fabric Lakehouse using Spark Livy API
  */
 
 export interface LakehouseTable {
@@ -35,9 +38,19 @@ export interface LakehouseDataResult {
   query: LakehouseDataQuery;
 }
 
+/**
+ * Real Lakehouse table data with schema and rows
+ */
+export interface RealLakehouseTableData {
+  schema: Array<{ name: string; dataType: string }>;
+  rows: any[][];
+  rowCount: number;
+  tableName: string;
+}
+
 export class LakehouseDataService {
   private static instance: LakehouseDataService;
-  // private workloadClient: any; // Will be injected from Fabric client when implementing real API calls
+  private sparkLivyClient?: SparkLivyClient;
 
   public static getInstance(): LakehouseDataService {
     if (!LakehouseDataService.instance) {
@@ -48,11 +61,278 @@ export class LakehouseDataService {
 
   /**
    * Initialize the service with Fabric workload client
-   * Currently disabled for demo - will be enabled when implementing real API calls
    */
-  // public initialize(workloadClient: any): void {
-  //   this.workloadClient = workloadClient;
-  // }
+  public initialize(workloadClient: WorkloadClientAPI): void {
+    this.sparkLivyClient = new SparkLivyClient(workloadClient);
+    console.log('✅ LakehouseDataService initialized with Spark Livy client');
+  }
+
+  /**
+   * Fetch REAL data from a Lakehouse table using SQL Analytics Endpoint (simpler alternative to Spark)
+   * This uses the Lakehouse's built-in SQL endpoint which doesn't require Spark session management
+   * @param workspaceId The workspace ID containing the Lakehouse
+   * @param lakehouseId The Lakehouse ID
+   * @param tableName The table name to query
+   * @param limit Maximum number of rows to fetch (default: 10000)
+   * @returns Promise<RealLakehouseTableData> Real table data with schema and rows
+   */
+  public async fetchRealTableDataViaSql(
+    workspaceId: string,
+    lakehouseId: string,
+    tableName: string,
+    limit: number = 10000
+  ): Promise<RealLakehouseTableData> {
+    console.log(`🔍 Fetching REAL data using SQL Analytics Endpoint: ${tableName}`);
+    console.log(`   Workspace: ${workspaceId}, Lakehouse: ${lakehouseId}, Limit: ${limit}`);
+
+    // TODO: Implement SQL Analytics Endpoint query
+    // This requires:
+    // 1. Get the SQL connection string from Get Lakehouse API
+    // 2. Use SQL client library to query the table
+    // 3. Map the results to our schema format
+    
+    throw new Error('SQL Analytics Endpoint method not yet implemented. Use backend API approach instead.');
+  }
+
+  /**
+   * Fetch REAL data from a Lakehouse table using Spark SQL
+   * @param workspaceId The workspace ID containing the Lakehouse
+   * @param lakehouseId The Lakehouse ID
+   * @param tableName The table name to query
+   * @param limit Maximum number of rows to fetch (default: 10000)
+   * @returns Promise<RealLakehouseTableData> Real table data with schema and rows
+   */
+  public async fetchRealTableData(
+    workspaceId: string,
+    lakehouseId: string,
+    tableName: string,
+    limit: number = 10000
+  ): Promise<RealLakehouseTableData> {
+    if (!this.sparkLivyClient) {
+      throw new Error('LakehouseDataService not initialized. Call initialize() first.');
+    }
+
+    console.log(`🔍 Fetching REAL data from Lakehouse table: ${tableName}`);
+    console.log(`   Workspace: ${workspaceId}, Lakehouse: ${lakehouseId}, Limit: ${limit}`);
+
+    try {
+      // Create Spark session
+      const sessionRequest = {
+        name: `ExcelEdit_${tableName}_${Date.now()}`,
+        executorCores: 4,
+        executorMemory: "28g",
+        driverCores: 4,
+        driverMemory: "28g"
+      };
+
+      console.log('📡 Creating Spark Livy session with request:', sessionRequest);
+      
+      let session: any;
+      try {
+        session = await this.sparkLivyClient.createSession(
+          workspaceId,
+          lakehouseId,
+          sessionRequest
+        );
+      } catch (sessionError: any) {
+        console.error('❌ Spark session creation API call failed');
+        console.error('   Error message:', sessionError.message);
+        console.error('   Error details:', sessionError);
+        
+        if (sessionError.statusCode === 404) {
+          throw new Error('Spark Livy API endpoint not found (404). Spark may not be enabled in this Fabric workspace.');
+        } else if (sessionError.statusCode === 401 || sessionError.statusCode === 403) {
+          throw new Error('Permission denied to create Spark session. Check workload authentication and Spark permissions.');
+        } else if (sessionError.statusCode === 400) {
+          throw new Error(`Bad request creating Spark session: ${sessionError.message}. The session parameters may be invalid.`);
+        }
+        
+        throw new Error(`Failed to create Spark session: ${sessionError.message}`);
+      }
+
+      console.log('📊 Full session response:', JSON.stringify(session, null, 2));
+      console.log('🔍 Session type:', typeof session);
+      console.log('🔍 Session keys:', session ? Object.keys(session) : 'null/undefined');
+      
+      // Check if this is an async operation (202 Accepted response)
+      if (session && session.operationId && !session.id) {
+        console.log('⏳ Session creation returned async operation (202 Accepted)');
+        console.log('   Operation ID:', session.operationId);
+        console.log('🔄 Polling for session creation completion...');
+        
+        // Poll for the session to be ready (max 5 minutes)
+        const maxPolls = 60; // 60 polls * 5 seconds = 5 minutes
+        let pollCount = 0;
+        
+        while (pollCount < maxPolls) {
+          pollCount++;
+          console.log(`   Poll attempt ${pollCount}/${maxPolls}...`);
+          
+          // Wait 5 seconds before polling
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          try {
+            // List sessions to find the one we just created
+            const sessions = await this.sparkLivyClient!.listSessions(workspaceId, lakehouseId);
+            console.log(`   Found ${sessions.length} total sessions`);
+            
+            // Find our session by name
+            const ourSession = sessions.find((s: any) => s.name === sessionRequest.name);
+            
+            if (ourSession && ourSession.id) {
+              console.log('✅ Session created and ready!');
+              console.log('   Session ID:', ourSession.id);
+              console.log('   Session state:', ourSession.state);
+              session = ourSession;
+              break;
+            } else {
+              console.log('   Session not ready yet, continuing to poll...');
+            }
+          } catch (pollError) {
+            console.warn('⚠️  Poll attempt failed:', pollError);
+            // Continue polling even if one attempt fails
+          }
+        }
+        
+        if (!session.id) {
+          throw new Error(`Session creation timed out after ${maxPolls * 5} seconds. The session may still be starting.`);
+        }
+      }
+      
+      console.log('🔍 Session.id value:', session?.id);
+      console.log('🔍 Session.id type:', typeof session?.id);
+
+      if (!session || !session.id) {
+        console.error('❌ Session creation failed - no session ID returned');
+        console.error('   Session response:', session);
+        console.error('   This usually means:');
+        console.error('   1. Spark Livy API is not available/enabled in this workspace');
+        console.error('   2. The API returned an unexpected response format');
+        console.error('   3. Authentication scope is insufficient');
+        throw new Error('Failed to create Spark session - no session ID returned. The Spark Livy API may not be available in this environment.');
+      }
+
+      console.log(`✅ Spark session created: ${session.id}`);
+
+      // Wait for session ready
+      await this.waitForSessionReady(workspaceId, lakehouseId, session.id);
+      
+      // Execute Spark code
+      const sparkCode = `
+import json
+
+df = spark.table("${tableName}").limit(${limit})
+schema = [{"name": field.name, "dataType": str(field.dataType)} for field in df.schema.fields]
+rows = [list(row) for row in df.collect()]
+
+print("LAKEHOUSE_DATA_START")
+print(json.dumps({"schema": schema, "rows": rows, "rowCount": len(rows), "tableName": "${tableName}"}))
+print("LAKEHOUSE_DATA_END")
+`;
+
+      const statement = await this.sparkLivyClient.submitStatement(
+        workspaceId,
+        lakehouseId,
+        session.id,
+        { code: sparkCode }
+      );
+
+      const result = await this.waitForStatementCompletion(
+        workspaceId,
+        lakehouseId,
+        session.id,
+        statement.id.toString()
+      );
+
+      const lakehouseData = this.parseSparkOutput(result.output.data['text/plain']);
+      
+      console.log(`✅ Fetched ${lakehouseData.rowCount} real rows from Lakehouse`);
+
+      // Cleanup
+      try {
+        await this.sparkLivyClient.deleteSession(workspaceId, lakehouseId, session.id);
+      } catch (e) {
+        console.warn('⚠️ Session cleanup warning:', e);
+      }
+
+      return lakehouseData;
+
+    } catch (error) {
+      console.error('❌ Error fetching real Lakehouse data:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Wait for Spark session to reach idle state
+   */
+  private async waitForSessionReady(
+    workspaceId: string,
+    lakehouseId: string,
+    sessionId: string,
+    maxWaitSeconds: number = 120
+  ): Promise<void> {
+    if (!this.sparkLivyClient) throw new Error('Spark client not initialized');
+
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWaitSeconds * 1000) {
+      const session = await this.sparkLivyClient.getSession(workspaceId, lakehouseId, sessionId);
+      if (session.state === 'idle') return;
+      if (session.state === 'error' || session.state === 'dead') {
+        throw new Error(`Session failed: ${session.state}`);
+      }
+      await this.sleep(2000);
+    }
+    throw new Error('Session timeout');
+  }
+
+  /**
+   * Wait for statement completion
+   */
+  private async waitForStatementCompletion(
+    workspaceId: string,
+    lakehouseId: string,
+    sessionId: string,
+    statementId: string,
+    maxWaitSeconds: number = 300
+  ): Promise<any> {
+    if (!this.sparkLivyClient) throw new Error('Spark client not initialized');
+
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWaitSeconds * 1000) {
+      const statement = await this.sparkLivyClient.getStatement(
+        workspaceId,
+        lakehouseId,
+        sessionId,
+        statementId
+      );
+      if (statement.state === 'available') return statement;
+      if (statement.state === 'error') {
+        throw new Error(`Statement error: ${JSON.stringify(statement.output)}`);
+      }
+      await this.sleep(1000);
+    }
+    throw new Error('Statement timeout');
+  }
+
+  /**
+   * Parse Spark output
+   */
+  private parseSparkOutput(output: string): RealLakehouseTableData {
+    const startMarker = 'LAKEHOUSE_DATA_START';
+    const endMarker = 'LAKEHOUSE_DATA_END';
+    const start = output.indexOf(startMarker) + startMarker.length;
+    const end = output.indexOf(endMarker);
+    const jsonString = output.substring(start, end).trim();
+    return JSON.parse(jsonString);
+  }
+
+  /**
+   * Sleep helper
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
 
   /**
    * Get available tables from the current lakehouse

@@ -235,16 +235,24 @@ class WOPIHostEndpoints {
       const accessToken = req.query.access_token || req.headers['authorization']?.replace('Bearer ', '');
       
       if (!this.validateAccessToken(accessToken, fileId)) {
+        console.warn('⚠️  Invalid access token for file:', fileId);
         return res.status(401).json({ error: 'Invalid access token' });
       }
 
-      const fileData = this.fileStorage.get(fileId);
+      // Try both storage locations for backward compatibility
+      let fileData = this.fileStorage.get(fileId) || this.fileContents.get(fileId);
+      
       if (!fileData) {
+        console.error('❌ File not found in storage:', fileId);
+        console.log('📂 Available files in fileStorage:', Array.from(this.fileStorage.keys()));
+        console.log('📂 Available files in fileContents:', Array.from(this.fileContents.keys()));
         return res.status(404).json({ error: 'File not found' });
       }
 
+      console.log(`✅ Serving Excel file ${fileId} (${fileData.length} bytes)`);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Length', fileData.length);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileId}.xlsx"`);
       res.send(fileData);
     } catch (error) {
       console.error('GetFile error:', error);
@@ -1204,12 +1212,20 @@ class WOPIHostEndpoints {
     try {
       // Step 1: Create Excel workbook using ExcelJS
       console.log('📊 Creating Excel workbook...');
+      console.log('📋 Table name:', tableName);
+      console.log('📋 Schema:', JSON.stringify(schema, null, 2));
+      console.log('📋 Table data rows:', tableData?.length || 0);
 
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(tableName);
 
-      // Add headers
-      const headers = Object.keys(schema);
+      // Validate schema
+      if (!schema || !Array.isArray(schema) || schema.length === 0) {
+        throw new Error('Invalid schema: schema must be a non-empty array');
+      }
+
+      // Add headers from schema
+      const headers = schema.map(col => col.name);
       worksheet.addRow(headers);
 
       // Style the header row
@@ -1222,10 +1238,11 @@ class WOPIHostEndpoints {
       };
 
       // Add data rows
-      tableData.forEach(row => {
-        const rowData = headers.map(header => row[header] || '');
-        worksheet.addRow(rowData);
-      });
+      if (tableData && Array.isArray(tableData)) {
+        tableData.forEach(row => {
+          worksheet.addRow(row);
+        });
+      }
 
       // Auto-fit columns
       worksheet.columns.forEach(column => {

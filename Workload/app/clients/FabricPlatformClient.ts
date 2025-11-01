@@ -240,15 +240,26 @@ export abstract class FabricPlatformClient {
   }
 
   /**
-   * POST request helper
+   * POST request helper with detailed response logging
    * @param endpoint The API endpoint
    * @param data The request body
    * @returns Promise<T>
    */
   protected post<T>(endpoint: string, data?: any): Promise<T> {
+    console.log(`📤 POST ${endpoint}`);
+    if (data) {
+      console.log('📦 Request body:', JSON.stringify(data, null, 2));
+    }
+    
     return this.makeRequest<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
+    }).then((response) => {
+      console.log(`📥 POST ${endpoint} response:`, JSON.stringify(response, null, 2));
+      return response;
+    }).catch((error) => {
+      console.error(`❌ POST ${endpoint} failed:`, error);
+      throw error;
     });
   }
 
