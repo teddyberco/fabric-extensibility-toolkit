@@ -4,9 +4,9 @@
     "displayName": "Workload_Display_Name",
     "fullDisplayName": "Workload_Full_Display_Name",
     "description": "Workload_Description",
-    "favicon": "assets/images/HelloFabricWorkloadIcon.png",
+    "favicon": "assets/images/ExcelEditorWorkloadIcon.v2.png",
     "icon": {
-      "name": "assets/images/HelloFabricWorkloadIcon.png"
+      "name": "assets/images/ExcelEditorWorkloadIcon.v2.png"
     },
     "homePage": {
       "learningMaterials": [
@@ -103,6 +103,10 @@
         {
           "mediaType": 0,
           "source": "assets/images/slidesPicturesTemplate.png"
+        },
+        {
+          "mediaType": 0,
+          "source": "assets/images/L2_page_banner.png"
         }
       ],
         "supportLink": {
@@ -111,8 +115,8 @@
           "help": {"url": "https://example.com/help"},
           "privacy": {"url": "https://example.com/privacy"},
           "terms": {"url": "https://example.com/terms"},
-          "license": {"url": "https://azuremarketplace.microsoft.com/sell"}
-      }
+          "license": {"url": "https://example.com/license"}
+        }
     },
     "compatibleItemTypes" : ["Lakehouse"]
 }
