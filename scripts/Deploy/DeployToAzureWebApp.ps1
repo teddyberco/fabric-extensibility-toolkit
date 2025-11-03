@@ -8,7 +8,7 @@ param (
     [string]$ResourceGroupName,
     
     # The path to the release directory (default: relative to script location)
-    [string]$ReleasePath = "..\..\release\app",
+    [string]$ReleasePath = "..\..\build\Frontend",
     
     # The deployment method to use
     [ValidateSet("ZipDeploy", "FTP", "LocalGit")]
