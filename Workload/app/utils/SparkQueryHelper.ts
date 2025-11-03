@@ -203,21 +203,28 @@ export async function executeSparkQuery(
     // Prepare Python code to query the table and return JSON
     const code = `
 import json
+import math
 from pyspark.sql import functions as F
 from datetime import date, datetime
+from decimal import Decimal
+import pandas as pd
 
-# Custom JSON encoder to handle dates and timestamps
+# Custom JSON encoder to handle dates, timestamps, and decimals
 class DateTimeEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, (date, datetime)):
             return obj.isoformat()
+        if isinstance(obj, Decimal):
+            return float(obj)
         return super(DateTimeEncoder, self).default(obj)
 
 # Query the table with limit
 df = spark.sql("SELECT * FROM ${tableName} LIMIT ${limit}")
 
-# Convert to JSON format
-result = df.toPandas().to_dict('records')
+# Convert to Pandas and replace NaN with None
+pdf = df.toPandas()
+pdf = pdf.where(pd.notnull(pdf), None)
+result = pdf.to_dict('records')
 
 # Print as JSON with custom encoder (this becomes the statement output)
 print(json.dumps(result, cls=DateTimeEncoder))
@@ -316,8 +323,20 @@ async function pollStatementResult(
     }
     
     if (statement.state === 'error') {
-      const errorMsg = statement.output?.data?.['text/plain'] || 'Unknown error';
-      throw new Error(`Query failed: ${errorMsg}`);
+      // Extract error details from output (cast to any since error properties aren't in type definition)
+      const output = statement.output as any;
+      const ename = output?.ename || 'Unknown error';
+      const evalue = output?.evalue || '';
+      const traceback = output?.traceback?.join('\n') || '';
+      
+      console.error('[SparkQueryHelper] Spark query error:');
+      console.error('  Error name:', ename);
+      console.error('  Error value:', evalue);
+      if (traceback) {
+        console.error('  Traceback:', traceback);
+      }
+      
+      throw new Error(`Spark query failed: ${ename}: ${evalue}`);
     }
     
     if (statement.state === 'cancelled') {

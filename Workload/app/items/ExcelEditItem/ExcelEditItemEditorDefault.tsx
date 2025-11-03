@@ -11,9 +11,10 @@ import {
   ArrowDownload20Regular,
   WindowNew20Regular,
 } from "@fluentui/react-icons";
-import { WorkloadClientAPI } from "@ms-fabric/workload-client";
+import { WorkloadClientAPI, NotificationType, NotificationToastDuration } from "@ms-fabric/workload-client";
 import { ItemWithDefinition, saveItemDefinition } from "../../controller/ItemCRUDController";
 import { callDatahubWizardOpen } from "../../controller/DataHubController";
+import { callNotificationOpen } from "../../controller/NotificationController";
 import { ExcelEditItemDefinition, ExcelEditWorkflowState, CurrentView, VIEW_TYPES } from "./ExcelEditItemModel";
 import { LocalExcelViewer } from "../../components/items/ExcelEditItem/LocalExcelViewer";
 import "../../styles.scss";
@@ -427,10 +428,115 @@ function TableEditorView({
   }, [item]);
 
   const loadExcelOnline = async (editingItem: any) => {
-    // Note: This function is kept for potential future use with Excel Online integration
-    // Currently, direct Excel download via Spark Livy (first button) is the primary method
-    console.log('📝 Excel Online integration not yet implemented');
-    console.log('💡 Use "Download Excel with Real Data" button for Spark-based export');
+    console.log('📤 Loading Excel Online with OneDrive upload...');
+    setIsLoadingExcel(true);
+    
+    try {
+      // Import required services
+      const { fetchLakehouseTableData } = await import('../../utils/ExcelClientSide');
+      const { OneDriveService } = await import('../../services/OneDriveService');
+      const ExcelJS = await import('exceljs');
+      
+      if (!editingItem.source?.lakehouse?.id) {
+        throw new Error('No lakehouse metadata found');
+      }
+      
+      // Step 1: Fetch data from Spark (same as download flow)
+      console.log('📊 Fetching data from Spark...');
+      const { data, schema } = await fetchLakehouseTableData(
+        workloadClient,
+        editingItem.source.lakehouse.workspaceId,
+        editingItem.source.lakehouse.id,
+        editingItem.name,
+        sparkSessionId
+      );
+      
+      // Step 2: Create Excel blob (in-memory, not downloaded)
+      console.log('📝 Creating Excel workbook...');
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet(editingItem.displayName);
+      
+      // Add headers
+      const headers = schema.map(col => col.name);
+      worksheet.addRow(headers);
+      
+      // Style header row
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: '0078D4' }
+      };
+      
+      // Add data rows
+      data.forEach(row => worksheet.addRow(row));
+      
+      // Auto-size columns
+      worksheet.columns.forEach((column: any) => {
+        column.width = 15;
+      });
+      
+      // Generate blob
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      
+      // Step 3: Upload to OneDrive
+      console.log('� Uploading to OneDrive...');
+      const oneDriveService = new OneDriveService(workloadClient);
+      const fileName = `${editingItem.displayName}_${Date.now()}.xlsx`;
+      const uploadResult = await oneDriveService.uploadExcelFile(blob, fileName);
+      
+      console.log('✅ Upload successful:', uploadResult);
+      
+      // Step 4: Show embedded Excel or open in new tab
+      if (uploadResult.embedUrl) {
+        console.log('📊 Opening embedded Excel viewer...');
+        // Open Office Online in a new tab with embed URL
+        window.open(uploadResult.embedUrl, '_blank');
+      } else {
+        console.log('⚠️ No embed URL, opening web URL instead...');
+        window.open(uploadResult.webUrl, '_blank');
+      }
+      
+      // Show success notification
+      await callNotificationOpen(
+        workloadClient,
+        'Excel file uploaded to OneDrive',
+        `${fileName} is now available in your OneDrive`,
+        NotificationType.Success,
+        NotificationToastDuration.Long
+      );
+      
+    } catch (error) {
+      console.error('❌ Failed to upload to OneDrive:', error);
+      
+      // Fallback: Show error and offer download instead
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check if it's a licensing issue
+      if (errorMessage.includes('SPO license') || errorMessage.includes('SharePoint Online')) {
+        await callNotificationOpen(
+          workloadClient,
+          'OneDrive not available',
+          'Your tenant does not have SharePoint Online/OneDrive for Business. Please use the "Download Excel" button to save the file locally.',
+          NotificationType.Warning,
+          NotificationToastDuration.Long
+        );
+      } else {
+        await callNotificationOpen(
+          workloadClient,
+          'OneDrive upload failed',
+          `${errorMessage}. Please use the Download button instead.`,
+          NotificationType.Error,
+          NotificationToastDuration.Long
+        );
+      }
+    } finally {
+      setIsLoadingExcel(false);
+    }
   };
 
   if (!currentEditingItem) {

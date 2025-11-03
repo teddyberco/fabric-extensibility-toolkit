@@ -233,3 +233,67 @@ export async function fetchAndDownloadLakehouseTable(
     throw error;
   }
 }
+
+/**
+ * Fetch table data from Fabric Lakehouse using Spark Livy (returns data instead of downloading)
+ * Useful for OneDrive upload flow where we need the blob for upload, not download
+ * @param workloadClient Workload client for authentication
+ * @param workspaceId Workspace ID
+ * @param lakehouseId Lakehouse ID
+ * @param tableName Table name
+ * @param existingSessionId Optional existing Spark session ID to reuse
+ * @returns Promise with data and schema
+ */
+export async function fetchLakehouseTableData(
+  workloadClient: WorkloadClientAPI,
+  workspaceId: string,
+  lakehouseId: string,
+  tableName: string,
+  existingSessionId?: string | null
+): Promise<{ data: any[][]; schema: TableSchema[] }> {
+  console.log('📊 Fetching table data from Lakehouse using Spark Livy...');
+  
+  try {
+    const sparkClient = new SparkLivyClient(workloadClient);
+    
+    // Get or create Spark session (reuse if provided)
+    let session: any;
+    if (existingSessionId) {
+      console.log('♻️ Reusing existing Spark session:', existingSessionId);
+      session = { id: existingSessionId };
+    } else {
+      console.log('⏳ Getting or creating Spark session...');
+      session = await getOrCreateSparkSession(sparkClient, workspaceId, lakehouseId);
+      console.log('✅ Spark session ready:', session.id);
+    }
+    
+    // Execute SQL query to get table data
+    console.log('🔍 Executing query via Spark Livy...');
+    const queryResult = await executeSparkQuery(sparkClient, workspaceId, lakehouseId, session.id, tableName, 1000);
+    console.log('✅ Query executed successfully');
+    console.log('   Rows fetched:', queryResult.rows?.length || 0);
+    
+    if (!queryResult.rows || queryResult.rows.length === 0) {
+      throw new Error('No data returned from query');
+    }
+    
+    // Extract schema from first row
+    const firstRow = queryResult.rows[0];
+    const schema: TableSchema[] = Object.keys(firstRow).map(key => ({
+      name: key,
+      dataType: typeof firstRow[key]
+    }));
+    
+    // Convert data to 2D array
+    const data = queryResult.rows.map(row => 
+      Object.values(row).map(val => val === null ? '' : String(val))
+    );
+    
+    console.log(`✅ Data fetched: ${schema.length} columns, ${data.length} rows`);
+    
+    return { data, schema };
+  } catch (error: any) {
+    console.error('❌ Error fetching table data:', error);
+    throw error;
+  }
+}
