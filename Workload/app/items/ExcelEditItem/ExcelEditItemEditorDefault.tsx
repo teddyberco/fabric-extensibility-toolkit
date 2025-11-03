@@ -493,12 +493,13 @@ function TableEditorView({
       
       // Step 4: Show embedded Excel or open in new tab
       if (uploadResult.embedUrl) {
-        console.log('📊 Opening embedded Excel viewer...');
-        // Open Office Online in a new tab with embed URL
-        window.open(uploadResult.embedUrl, '_blank');
+        console.log('📊 Setting embedded Excel viewer URL...');
+        // Set the embed URL to display in the iframe
+        setExcelOnlineUrl(uploadResult.embedUrl);
       } else {
-        console.log('⚠️ No embed URL, opening web URL instead...');
-        window.open(uploadResult.webUrl, '_blank');
+        console.log('⚠️ No embed URL, falling back to web URL...');
+        // Fallback: use web URL (may not embed properly but better than nothing)
+        setExcelOnlineUrl(uploadResult.webUrl);
       }
       
       // Show success notification
@@ -795,12 +796,6 @@ function TableEditorView({
 
       {!isLoadingExcel && !showLocalViewer && excelOnlineUrl && (
         <div className="table-editor-iframe-container-clean">
-          <div className="excel-online-warning">
-            <Text size={400} weight="semibold">⚠️ Excel Online cannot embed from localhost</Text>
-            <Text size={300} style={{ display: 'block', marginTop: '8px' }}>
-              For the best experience, use the <strong>"Download Excel File"</strong> button above to open in desktop Excel.
-            </Text>
-          </div>
           <iframe
             src={excelOnlineUrl}
             className="table-editor-iframe"
