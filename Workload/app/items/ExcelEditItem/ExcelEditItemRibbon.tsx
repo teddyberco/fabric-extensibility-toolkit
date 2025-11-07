@@ -11,7 +11,8 @@ import {
   Flash24Regular,
   WindowNew24Regular,
   DatabaseArrowUp20Regular,
-  Add20Regular
+  Add20Regular,
+  ArrowClockwise20Regular
 } from "@fluentui/react-icons";
 import { PageProps } from '../../App';
 import { CurrentView, VIEW_TYPES } from "./ExcelEditItemModel";
@@ -34,6 +35,7 @@ export interface ExcelEditItemRibbonProps extends PageProps {
   saveToLakehouseCallback?: () => Promise<void>;
   excelWebUrl?: string;
   addTableCallback?: () => Promise<void>;
+  refreshExcelCallback?: () => Promise<void>;
 }
 
 
@@ -62,8 +64,8 @@ const ExcelEditItemTabToolbar: React.FC<ExcelEditItemRibbonProps> = (props) => {
 
   return (
     <Toolbar>
-      {/* Add Table Button - Only show in Canvas Overview */}
-      {props.currentView === VIEW_TYPES.CANVAS_OVERVIEW && props.addTableCallback && (
+      {/* Add Table Button - Show in Empty and Canvas Overview (main page), not in Table Editor */}
+      {(props.currentView === VIEW_TYPES.EMPTY || props.currentView === VIEW_TYPES.CANVAS_OVERVIEW) && props.addTableCallback && (
         <Tooltip
           content="Add a table from your Lakehouse"
           relationship="label">
@@ -142,6 +144,22 @@ const ExcelEditItemTabToolbar: React.FC<ExcelEditItemRibbonProps> = (props) => {
             disabled={!props.excelWebUrl}
           >
             Open in Excel Online
+          </ToolbarButton>
+        </Tooltip>
+      )}
+
+      {/* Refresh Excel Button - Show in Table Editor when Excel URL exists */}
+      {props.currentView === VIEW_TYPES.TABLE_EDITOR && props.refreshExcelCallback && props.excelWebUrl && (
+        <Tooltip
+          content="Refresh Excel (regenerate access token)"
+          relationship="label">
+          <ToolbarButton
+            aria-label="Refresh Excel"
+            data-testid="refresh-excel-btn"
+            icon={<ArrowClockwise20Regular />}
+            onClick={props.refreshExcelCallback}
+          >
+            Refresh
           </ToolbarButton>
         </Tooltip>
       )}

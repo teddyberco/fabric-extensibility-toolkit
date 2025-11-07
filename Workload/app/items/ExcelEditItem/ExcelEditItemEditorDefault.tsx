@@ -42,6 +42,7 @@ interface ExcelEditItemEditorDefaultProps {
   onExcelWebUrlChange?: (url: string) => void; // Callback to update Excel URL in parent
   onAddTableCallbackChange?: (callback: (() => Promise<void>) | undefined) => void; // Callback to set Add Table handler
   onItemUpdate?: (updatedItem: ItemWithDefinition<ExcelEditItemDefinition>) => void; // Callback to update item in parent
+  onRefreshExcelCallbackChange?: (callback: (() => Promise<void>) | undefined) => void; // Callback to set Refresh Excel handler
 }
 
 export function ExcelEditItemEditorDefault({
@@ -53,7 +54,8 @@ export function ExcelEditItemEditorDefault({
   sparkSessionId,
   onExcelWebUrlChange,
   onAddTableCallbackChange,
-  onItemUpdate
+  onItemUpdate,
+  onRefreshExcelCallbackChange
 }: ExcelEditItemEditorDefaultProps) {
   
   console.log('🎯 ExcelEditItemEditorDefault rendering with currentView:', currentView);
@@ -101,6 +103,7 @@ export function ExcelEditItemEditorDefault({
       sparkSessionId={sparkSessionId}
       onExcelWebUrlChange={onExcelWebUrlChange}
       onCanvasItemsUpdate={setCanvasItems}
+      onRefreshExcelCallbackChange={onRefreshExcelCallbackChange}
     />;
   }
   
@@ -431,7 +434,8 @@ function TableEditorView({
   onNavigateToCanvasOverview,
   sparkSessionId,
   onExcelWebUrlChange,
-  onCanvasItemsUpdate
+  onCanvasItemsUpdate,
+  onRefreshExcelCallbackChange
 }: {
   workloadClient: WorkloadClientAPI;
   item?: ItemWithDefinition<ExcelEditItemDefinition>;
@@ -439,6 +443,7 @@ function TableEditorView({
   sparkSessionId?: string | null;
   onExcelWebUrlChange?: (url: string) => void;
   onCanvasItemsUpdate?: (items: CanvasItem[]) => void;
+  onRefreshExcelCallbackChange?: (callback: (() => Promise<void>) | undefined) => void;
 }) {
   const [currentEditingItem, setCurrentEditingItem] = useState<any>(null);
   const [excelOnlineUrl, setExcelOnlineUrl] = useState<string>('');
@@ -545,11 +550,12 @@ function TableEditorView({
       console.log('💾 Saving Excel URLs to item definition...');
       const workflowState = item?.definition?.state as ExcelEditWorkflowState;
       if (workflowState && workflowState.currentEditingItem) {
-        // Update the currentEditingItem with Excel URLs
+        // Update the currentEditingItem with Excel URLs AND fileId for future refresh
         const updatedCurrentEditingItem = {
           ...workflowState.currentEditingItem,
           excelWebUrl: uploadResult.webUrl,
-          excelEmbedUrl: uploadResult.embedUrl || uploadResult.webUrl
+          excelEmbedUrl: uploadResult.embedUrl || uploadResult.webUrl,
+          excelFileId: uploadResult.fileId  // Store fileId for token refresh
         };
         
         // Also update the canvas item to persist URLs for next time
@@ -562,7 +568,8 @@ function TableEditorView({
             return {
               ...canvasItem,
               excelWebUrl: uploadResult.webUrl,
-              excelEmbedUrl: uploadResult.embedUrl || uploadResult.webUrl
+              excelEmbedUrl: uploadResult.embedUrl || uploadResult.webUrl,
+              excelFileId: uploadResult.fileId  // Store fileId for token refresh
             };
           }
           return canvasItem;
@@ -647,6 +654,109 @@ function TableEditorView({
       setIsLoadingExcel(false);
     }
   };
+
+  // Refresh Excel embed URL to get fresh access token (solves "refused to connect" after token expiry)
+  const handleRefreshExcel = useCallback(async () => {
+    if (!currentEditingItem?.excelFileId) {
+      console.warn('⚠️ Cannot refresh Excel: No fileId found');
+      await callNotificationOpen(
+        workloadClient,
+        'Cannot refresh',
+        'Excel file ID not found. Please reload the table.',
+        NotificationType.Warning,
+        NotificationToastDuration.Short
+      );
+      return;
+    }
+
+    console.log('🔄 Refreshing Excel embed URL with fresh token...');
+    setIsLoadingExcel(true);
+
+    try {
+      const { OneDriveService } = await import('../../services/OneDriveService');
+      const oneDriveService = new OneDriveService(workloadClient);
+      
+      // Get fresh embed URL with new access token
+      const freshEmbedUrl = await oneDriveService.refreshEmbedUrl(currentEditingItem.excelFileId);
+      
+      if (!freshEmbedUrl) {
+        throw new Error('Failed to get fresh embed URL');
+      }
+
+      console.log('✅ Got fresh embed URL');
+      
+      // Update local state
+      setExcelOnlineUrl(freshEmbedUrl);
+      
+      // Update item definition with new URL
+      const workflowState = item?.definition?.state as ExcelEditWorkflowState;
+      if (workflowState && workflowState.currentEditingItem) {
+        const updatedCurrentEditingItem = {
+          ...workflowState.currentEditingItem,
+          excelEmbedUrl: freshEmbedUrl
+        };
+        
+        // Also update the canvas item
+        const updatedCanvasItems = (workflowState.canvasItems || []).map(canvasItem => {
+          if (canvasItem.id === currentEditingItem.id) {
+            return {
+              ...canvasItem,
+              excelEmbedUrl: freshEmbedUrl
+            };
+          }
+          return canvasItem;
+        });
+        
+        // Update parent state
+        if (onCanvasItemsUpdate) {
+          onCanvasItemsUpdate(updatedCanvasItems);
+        }
+        
+        const updatedState: ExcelEditWorkflowState = {
+          ...workflowState,
+          currentEditingItem: updatedCurrentEditingItem,
+          canvasItems: updatedCanvasItems
+        };
+        
+        // Save to item definition
+        const savePayload = { state: updatedState } as ExcelEditItemDefinition;
+        await saveItemDefinition(workloadClient, item?.id || '', savePayload);
+        console.log('✅ Fresh Excel URL saved');
+      }
+      
+      await callNotificationOpen(
+        workloadClient,
+        'Excel refreshed',
+        'Access token renewed successfully',
+        NotificationType.Success,
+        NotificationToastDuration.Short
+      );
+      
+    } catch (error) {
+      console.error('❌ Failed to refresh Excel:', error);
+      await callNotificationOpen(
+        workloadClient,
+        'Refresh failed',
+        error instanceof Error ? error.message : 'Unknown error',
+        NotificationType.Error,
+        NotificationToastDuration.Short
+      );
+    } finally {
+      setIsLoadingExcel(false);
+    }
+  }, [currentEditingItem, workloadClient, item, onCanvasItemsUpdate]);
+
+  // Register refresh callback with parent (for ribbon button)
+  useEffect(() => {
+    if (onRefreshExcelCallbackChange) {
+      onRefreshExcelCallbackChange(handleRefreshExcel);
+    }
+    return () => {
+      if (onRefreshExcelCallbackChange) {
+        onRefreshExcelCallbackChange(undefined);
+      }
+    };
+  }, [onRefreshExcelCallbackChange, handleRefreshExcel]);
 
   if (!currentEditingItem) {
     return (

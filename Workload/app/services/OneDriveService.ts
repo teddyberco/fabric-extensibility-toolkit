@@ -129,6 +129,17 @@ export class OneDriveService {
     }
   }
 
+  async refreshEmbedUrl(fileId: string): Promise<string | undefined> {
+    try {
+      console.log('🔄 Refreshing embed URL for existing file...');
+      const accessToken = await this.getGraphAccessToken();
+      return await this.getOfficeOnlinePreviewUrl(fileId, accessToken);
+    } catch (error) {
+      console.error('❌ Failed to refresh embed URL:', error);
+      throw error;
+    }
+  }
+
   async checkOneDriveAccess(): Promise<boolean> {
     try {
       const accessToken = await this.getGraphAccessToken();

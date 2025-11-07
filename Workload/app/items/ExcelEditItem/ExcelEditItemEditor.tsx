@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { Stack } from "@fluentui/react";
 import { Button } from "@fluentui/react-components";
@@ -28,7 +28,17 @@ export function ExcelEditItemEditor(props: PageProps) {
   const [sparkSessionId, setSparkSessionId] = useState<string | null>(null);
   const [isSparkSessionStarting, setIsSparkSessionStarting] = useState(false);
   const [excelWebUrl, setExcelWebUrl] = useState<string>(''); // Excel Online URL for ribbon button
-  const addTableCallbackRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const [addTableCallback, setAddTableCallback] = useState<(() => Promise<void>) | undefined>(undefined);
+  const [refreshExcelCallback, setRefreshExcelCallback] = useState<(() => Promise<void>) | undefined>(undefined);
+
+  // Wrapper functions to properly set function state (React requires wrapping functions)
+  const handleSetAddTableCallback = (callback: (() => Promise<void>) | undefined) => {
+    setAddTableCallback(() => callback);
+  };
+
+  const handleSetRefreshExcelCallback = (callback: (() => Promise<void>) | undefined) => {
+    setRefreshExcelCallback(() => callback);
+  };
 
   const { pathname } = useLocation();
 
@@ -424,14 +434,15 @@ export function ExcelEditItemEditor(props: PageProps) {
         openInExcelOnlineCallback={handleOpenInExcelOnline}
         saveToLakehouseCallback={handleSaveToLakehouse}
         excelWebUrl={excelWebUrl}
-        addTableCallback={addTableCallbackRef.current}
+        addTableCallback={addTableCallback}
+        refreshExcelCallback={refreshExcelCallback}
       />
       {currentView === VIEW_TYPES.EMPTY ? (
         <ExcelEditItemEditorEmpty
           workloadClient={workloadClient}
           item={item}
           onNavigateToCanvasOverview={navigateToCanvasOverview}
-          onAddTableCallbackChange={(callback) => { addTableCallbackRef.current = callback; }}
+          onAddTableCallbackChange={handleSetAddTableCallback}
           onItemUpdate={setItem}
         />
       ) : currentView === VIEW_TYPES.CANVAS_OVERVIEW ? (
@@ -441,7 +452,7 @@ export function ExcelEditItemEditor(props: PageProps) {
           currentView={currentView}
           onNavigateToTableEditor={navigateToTableEditor}
           sparkSessionId={sparkSessionId}
-          onAddTableCallbackChange={(callback) => { addTableCallbackRef.current = callback; }}
+          onAddTableCallbackChange={handleSetAddTableCallback}
           onItemUpdate={setItem}
         />
       ) : (
@@ -452,6 +463,7 @@ export function ExcelEditItemEditor(props: PageProps) {
           onNavigateToCanvasOverview={navigateToCanvasOverview}
           sparkSessionId={sparkSessionId}
           onExcelWebUrlChange={setExcelWebUrl}
+          onRefreshExcelCallbackChange={handleSetRefreshExcelCallback}
         />
       )}
     </Stack>
