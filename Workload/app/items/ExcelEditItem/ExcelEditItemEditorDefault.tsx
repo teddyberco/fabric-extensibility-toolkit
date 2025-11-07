@@ -1,15 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Button,
   Text,
   Spinner,
+  Tooltip,
 } from "@fluentui/react-components";
 import {
   DatabaseSearch20Regular,
   TableSimple20Regular,
-  Add20Regular,
-  ArrowDownload20Regular,
-  WindowNew20Regular,
+  Delete20Regular,
 } from "@fluentui/react-icons";
 import { WorkloadClientAPI, NotificationType, NotificationToastDuration } from "@ms-fabric/workload-client";
 import { ItemWithDefinition, saveItemDefinition } from "../../controller/ItemCRUDController";
@@ -40,6 +39,9 @@ interface ExcelEditItemEditorDefaultProps {
   onNavigateToTableEditor?: () => void;
   onNavigateToCanvasOverview?: () => void;
   sparkSessionId?: string | null;
+  onExcelWebUrlChange?: (url: string) => void; // Callback to update Excel URL in parent
+  onAddTableCallbackChange?: (callback: (() => Promise<void>) | undefined) => void; // Callback to set Add Table handler
+  onItemUpdate?: (updatedItem: ItemWithDefinition<ExcelEditItemDefinition>) => void; // Callback to update item in parent
 }
 
 export function ExcelEditItemEditorDefault({
@@ -48,10 +50,36 @@ export function ExcelEditItemEditorDefault({
   currentView,
   onNavigateToTableEditor,
   onNavigateToCanvasOverview,
-  sparkSessionId
+  sparkSessionId,
+  onExcelWebUrlChange,
+  onAddTableCallbackChange,
+  onItemUpdate
 }: ExcelEditItemEditorDefaultProps) {
   
   console.log('🎯 ExcelEditItemEditorDefault rendering with currentView:', currentView);
+  
+  // ✅ Lift canvasItems state to parent component so both views can access it
+  const initializeCanvasItems = () => {
+    if (item?.definition?.state) {
+      const state = item.definition.state as ExcelEditWorkflowState;
+      return state.canvasItems || [];
+    }
+    return [];
+  };
+
+  const [canvasItems, setCanvasItems] = useState<CanvasItem[]>(initializeCanvasItems);
+  
+  // Update canvas items when item state changes
+  useEffect(() => {
+    console.log('🔄 Parent useEffect: item state changed');
+    if (item?.definition?.state) {
+      const state = item.definition.state as ExcelEditWorkflowState;
+      if (state.canvasItems) {
+        console.log('📋 Parent: Updating canvas items from state:', state.canvasItems);
+        setCanvasItems(state.canvasItems);
+      }
+    }
+  }, [item?.definition?.state]);
   
   if (currentView === VIEW_TYPES.CANVAS_OVERVIEW) {
     console.log('📋 Rendering CanvasOverviewView');
@@ -59,6 +87,10 @@ export function ExcelEditItemEditorDefault({
       workloadClient={workloadClient}
       item={item}
       onNavigateToTableEditor={onNavigateToTableEditor}
+      canvasItems={canvasItems}
+      setCanvasItems={setCanvasItems}
+      onAddTableCallbackChange={onAddTableCallbackChange}
+      onItemUpdate={onItemUpdate}
     />;
   } else if (currentView === VIEW_TYPES.TABLE_EDITOR) {
     console.log('📊 Rendering TableEditorView');
@@ -67,6 +99,8 @@ export function ExcelEditItemEditorDefault({
       item={item}
       onNavigateToCanvasOverview={onNavigateToCanvasOverview}
       sparkSessionId={sparkSessionId}
+      onExcelWebUrlChange={onExcelWebUrlChange}
+      onCanvasItemsUpdate={setCanvasItems}
     />;
   }
   
@@ -77,50 +111,24 @@ export function ExcelEditItemEditorDefault({
 function CanvasOverviewView({
   workloadClient,
   item,
-  onNavigateToTableEditor
+  onNavigateToTableEditor,
+  canvasItems,
+  setCanvasItems,
+  onAddTableCallbackChange,
+  onItemUpdate
 }: {
   workloadClient: WorkloadClientAPI;
   item?: ItemWithDefinition<ExcelEditItemDefinition>;
   onNavigateToTableEditor?: () => void;
+  canvasItems: CanvasItem[];
+  setCanvasItems: (items: CanvasItem[]) => void;
+  onAddTableCallbackChange?: (callback: (() => Promise<void>) | undefined) => void;
+  onItemUpdate?: (updatedItem: ItemWithDefinition<ExcelEditItemDefinition>) => void;
 }) {
-  // Initialize canvas items from saved state immediately
-  const initializeCanvasItems = () => {
-    if (item?.definition?.state) {
-      const state = item.definition.state as ExcelEditWorkflowState;
-      return state.canvasItems || [];
-    }
-    return [];
-  };
-
-  const [canvasItems, setCanvasItems] = useState<CanvasItem[]>(initializeCanvasItems);
   const [isLoading, setIsLoading] = useState(false);
   
-  // Update canvas items when item state changes
-  useEffect(() => {
-    console.log('🔄 useEffect triggered, item:', item);
-    if (item?.definition?.state) {
-      const state = item.definition.state as ExcelEditWorkflowState;
-      console.log('📊 Full state:', state);
-      if (state.canvasItems) {
-        console.log('📋 Updating canvas items from state:', state.canvasItems);
-        setCanvasItems(state.canvasItems);
-        console.log('✅ setCanvasItems called with:', state.canvasItems);
-      } else {
-        console.log('❌ No canvas items found in state');
-        setCanvasItems([]);
-      }
-    } else {
-      console.log('❌ No item definition or state found');
-      setCanvasItems([]);
-    }
-  }, [item?.definition?.state]);
-
-  // Debug logging for canvasItems state changes
-  useEffect(() => {
-    console.log('🎯 canvasItems state changed to:', canvasItems);
-  }, [canvasItems]);
-  
-  const handleAddTable = async () => {
+  // Use useCallback to memoize the handleAddTable function
+  const handleAddTable = useCallback(async () => {
     console.log('🎯 Add Table button clicked!');
     setIsLoading(true);
     try {
@@ -208,11 +216,20 @@ function CanvasOverviewView({
               
               if (workloadClient && item) {
                 try {
-                  const saveResult = await saveItemDefinition(workloadClient, item.id, { state: updatedState } as ExcelEditItemDefinition);
-                  if (saveResult) {
-                    console.log('✅ Table added to canvas successfully!');
-                  } else {
-                    console.error('❌ Save result was undefined - check console for errors');
+                  await saveItemDefinition(workloadClient, item.id, { state: updatedState } as ExcelEditItemDefinition);
+                  console.log('✅ Table added to canvas and saved to item definition!');
+                  
+                  // ✅ CRITICAL: Update parent's item state with fresh data
+                  if (onItemUpdate) {
+                    const updatedItem: ItemWithDefinition<ExcelEditItemDefinition> = {
+                      ...item,
+                      definition: {
+                        ...item.definition,
+                        state: updatedState
+                      }
+                    };
+                    onItemUpdate(updatedItem);
+                    console.log('✅ Parent item state updated with new canvas items');
                   }
                 } catch (saveError) {
                   console.error('❌ Error saving canvas state:', saveError);
@@ -240,29 +257,29 @@ function CanvasOverviewView({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [workloadClient, canvasItems, setCanvasItems, item, onItemUpdate]);
 
-  // Temporary test function for demo purposes
-  const handleAddTestTable = async () => {
-    console.log('🧪 Adding test table for demo...');
-    
-    // Create unique ID with timestamp to avoid React key conflicts
-    const timestamp = Date.now();
-    const testCanvasItem: CanvasItem = {
-      id: `test-lakehouse-customers-${timestamp}`,
-      type: 'lakehouse-table',
-      name: 'customers',
-      displayName: 'Customers Table',
-      source: {
-        lakehouse: { id: 'test-lakehouse', name: 'Demo Lakehouse', workspaceId: 'test-workspace' },
-        table: { name: 'customers', displayName: 'Customers Table', schema: [], rowCount: 1000 }
-      },
-      lastEdited: new Date().toISOString()
+  // Register the Add Table callback with parent so it can be used in the ribbon
+  useEffect(() => {
+    if (onAddTableCallbackChange) {
+      onAddTableCallbackChange(handleAddTable);
+    }
+    // Cleanup: unregister callback when component unmounts
+    return () => {
+      if (onAddTableCallbackChange) {
+        onAddTableCallbackChange(undefined);
+      }
     };
+  }, [onAddTableCallbackChange, handleAddTable]);
+
+  const handleDeleteTable = useCallback(async (canvasItemId: string) => {
+    console.log('🗑️ Delete table clicked for:', canvasItemId);
     
-    const updatedCanvasItems = [...canvasItems, testCanvasItem];
+    // Remove the item from canvas
+    const updatedCanvasItems = canvasItems.filter(item => item.id !== canvasItemId);
     setCanvasItems(updatedCanvasItems);
     
+    // Save the updated state
     const currentState = item?.definition?.state as ExcelEditWorkflowState || {};
     const updatedState: ExcelEditWorkflowState = {
       ...currentState,
@@ -270,13 +287,24 @@ function CanvasOverviewView({
     };
     
     if (workloadClient && item) {
-      await saveItemDefinition(workloadClient, item.id, { state: updatedState } as ExcelEditItemDefinition);
+      try {
+        await saveItemDefinition(workloadClient, item.id, { state: updatedState } as ExcelEditItemDefinition);
+        console.log('✅ Table removed from canvas successfully!');
+      } catch (error) {
+        console.error('❌ Error saving canvas state after delete:', error);
+      }
     }
-  };
+  }, [canvasItems, setCanvasItems, item, workloadClient]);
 
   const handleEditTable = (canvasItem: CanvasItem) => {
     console.log('Opening table editor for:', canvasItem.name);
     console.log('📋 Full canvas item data:', canvasItem);
+    console.log('🔍 Canvas item Excel URLs:', {
+      hasWebUrl: !!(canvasItem as any).excelWebUrl,
+      hasEmbedUrl: !!(canvasItem as any).excelEmbedUrl,
+      webUrl: (canvasItem as any).excelWebUrl,
+      embedUrl: (canvasItem as any).excelEmbedUrl
+    });
     
     const currentState = item?.definition?.state as ExcelEditWorkflowState || {};
     const updatedState: ExcelEditWorkflowState = {
@@ -288,7 +316,10 @@ function CanvasOverviewView({
         name: canvasItem.name,
         displayName: canvasItem.displayName,
         // ✅ IMPORTANT: Store full canvas item for Lakehouse data access
-        source: canvasItem.source  // Includes lakehouse {id, name, workspaceId} and table details
+        source: canvasItem.source,  // Includes lakehouse {id, name, workspaceId} and table details
+        // ✅ IMPORTANT: Preserve Excel URLs if they exist from previous editing
+        excelWebUrl: (canvasItem as any).excelWebUrl,
+        excelEmbedUrl: (canvasItem as any).excelEmbedUrl
       } as any // Extended to include source
     };
     
@@ -310,6 +341,15 @@ function CanvasOverviewView({
   useEffect(() => {
     const workflowState = item?.definition?.state as ExcelEditWorkflowState;
     if (workflowState?.canvasItems) {
+      console.log('📥 Loading canvas items from state:', workflowState.canvasItems);
+      workflowState.canvasItems.forEach((ci, index) => {
+        console.log(`   Item ${index}: ${ci.name}, Excel URLs:`, {
+          hasWebUrl: !!(ci as any).excelWebUrl,
+          hasEmbedUrl: !!(ci as any).excelEmbedUrl,
+          webUrl: (ci as any).excelWebUrl,
+          embedUrl: (ci as any).excelEmbedUrl
+        });
+      });
       setCanvasItems(workflowState.canvasItems);
     }
   }, [item]);
@@ -323,28 +363,8 @@ function CanvasOverviewView({
   return (
     <div className="excel-canvas">
       <div className="canvas-header">
-        <Text size={600} weight="bold">Excel Editing Canvas</Text>
+        <Text size={600} weight="bold">Excel Linked Tables</Text>
         <Text size={400}>Select tables and files to edit with Excel</Text>
-      </div>
-
-      <div className="canvas-actions">
-        <Button
-          appearance="primary"
-          icon={<Add20Regular />}
-          onClick={handleAddTable}
-          disabled={isLoading}
-        >
-          {isLoading ? "Adding..." : "Add Table"}
-        </Button>
-        
-        {/* Temporary test button for demo purposes */}
-        <Button
-          appearance="secondary"
-          onClick={handleAddTestTable}
-          style={{ marginLeft: '10px' }}
-        >
-          Add Test Table (Demo)
-        </Button>
       </div>
 
       {isLoading && (
@@ -367,24 +387,33 @@ function CanvasOverviewView({
           {canvasItems.map((canvasItem, index) => {
             console.log(`🔷 Rendering canvas item ${index}:`, canvasItem);
             return (
-              <div key={canvasItem.id} className="canvas-item-card">
-                <div className="canvas-item-content">
-                  <div className="canvas-item-info">
-                    <TableSimple20Regular style={{ color: '#0078d4' }} />
-                    <div>
-                      <div className="canvas-item-title">{canvasItem.displayName}</div>
-                      <div className="canvas-item-subtitle">
+              <div key={canvasItem.id} className="canvas-item-card compact">
+                <div className="canvas-item-header">
+                  <div className="canvas-item-info-row">
+                    <TableSimple20Regular className="table-icon" />
+                    <div className="canvas-item-text">
+                      <Text weight="semibold" size={400}>{canvasItem.displayName}</Text>
+                      <Text size={300} className="canvas-item-source">
                         {canvasItem.source.lakehouse?.name || 'Unknown Source'}
-                      </div>
+                      </Text>
                     </div>
                   </div>
-                  <div>
-                    <button 
-                      className="canvas-item-button"
+                  <div className="canvas-item-actions-row">
+                    <Button
+                      appearance="primary"
+                      size="small"
                       onClick={() => handleEditTable(canvasItem)}
                     >
-                      Edit Table
-                    </button>
+                      Edit
+                    </Button>
+                    <Tooltip content="Remove table" relationship="label">
+                      <Button
+                        appearance="subtle"
+                        size="small"
+                        icon={<Delete20Regular />}
+                        onClick={() => handleDeleteTable(canvasItem.id)}
+                      />
+                    </Tooltip>
                   </div>
                 </div>
               </div>
@@ -400,16 +429,19 @@ function TableEditorView({
   workloadClient,
   item,
   onNavigateToCanvasOverview,
-  sparkSessionId
+  sparkSessionId,
+  onExcelWebUrlChange,
+  onCanvasItemsUpdate
 }: {
   workloadClient: WorkloadClientAPI;
   item?: ItemWithDefinition<ExcelEditItemDefinition>;
   onNavigateToCanvasOverview?: () => void;
   sparkSessionId?: string | null;
+  onExcelWebUrlChange?: (url: string) => void;
+  onCanvasItemsUpdate?: (items: CanvasItem[]) => void;
 }) {
   const [currentEditingItem, setCurrentEditingItem] = useState<any>(null);
   const [excelOnlineUrl, setExcelOnlineUrl] = useState<string>('');
-  const [excelWebUrl, setExcelWebUrl] = useState<string>(''); // Store the webUrl for opening in new tab
   const [isLoadingExcel, setIsLoadingExcel] = useState(false);
   const [excelFileInfo, setExcelFileInfo] = useState<{fileId: string, fileName: string, tableName: string} | null>(null);
   const [showLocalViewer, setShowLocalViewer] = useState(false);
@@ -419,10 +451,27 @@ function TableEditorView({
     console.log('🔍 TableEditorView: Checking for currentEditingItem in state:', workflowState);
     if (workflowState?.currentEditingItem) {
       console.log('✅ TableEditorView: Found currentEditingItem:', workflowState.currentEditingItem);
+      console.log('🔍 Excel URLs check:', {
+        hasWebUrl: !!workflowState.currentEditingItem.excelWebUrl,
+        hasEmbedUrl: !!workflowState.currentEditingItem.excelEmbedUrl,
+        webUrl: workflowState.currentEditingItem.excelWebUrl,
+        embedUrl: workflowState.currentEditingItem.excelEmbedUrl
+      });
       setCurrentEditingItem(workflowState.currentEditingItem);
       
-      // Load Excel Online immediately when item is found
-      loadExcelOnline(workflowState.currentEditingItem);
+      // Check if we already have a saved Excel URL
+      if (workflowState.currentEditingItem.excelWebUrl && workflowState.currentEditingItem.excelEmbedUrl) {
+        console.log('📋 Found existing Excel URLs in state, loading preview...');
+        setExcelOnlineUrl(workflowState.currentEditingItem.excelEmbedUrl);
+        
+        // Notify parent about the URL
+        if (onExcelWebUrlChange) {
+          onExcelWebUrlChange(workflowState.currentEditingItem.excelWebUrl);
+        }
+      } else {
+        console.log('� No Excel file created yet - showing empty state');
+        // Don't auto-create, let user click button to create
+      }
     } else {
       console.log('❌ TableEditorView: No currentEditingItem found in state');
     }
@@ -492,10 +541,65 @@ function TableEditorView({
       
       console.log('✅ Upload successful:', uploadResult);
       
-      // Store both embed URL and web URL
-      setExcelWebUrl(uploadResult.webUrl); // Store for "Open in new tab" button
+      // Step 4: Save URLs to item definition (both currentEditingItem AND canvasItems)
+      console.log('💾 Saving Excel URLs to item definition...');
+      const workflowState = item?.definition?.state as ExcelEditWorkflowState;
+      if (workflowState && workflowState.currentEditingItem) {
+        // Update the currentEditingItem with Excel URLs
+        const updatedCurrentEditingItem = {
+          ...workflowState.currentEditingItem,
+          excelWebUrl: uploadResult.webUrl,
+          excelEmbedUrl: uploadResult.embedUrl || uploadResult.webUrl
+        };
+        
+        // Also update the canvas item to persist URLs for next time
+        console.log('🔍 Looking for canvas item to update with ID:', editingItem.id);
+        console.log('🔍 Current canvasItems:', workflowState.canvasItems);
+        const updatedCanvasItems = (workflowState.canvasItems || []).map(canvasItem => {
+          console.log('  🔍 Comparing:', canvasItem.id, '===', editingItem.id, '?', canvasItem.id === editingItem.id);
+          if (canvasItem.id === editingItem.id) {
+            console.log('  ✅ MATCH FOUND! Updating canvas item with Excel URLs');
+            return {
+              ...canvasItem,
+              excelWebUrl: uploadResult.webUrl,
+              excelEmbedUrl: uploadResult.embedUrl || uploadResult.webUrl
+            };
+          }
+          return canvasItem;
+        });
+        
+        console.log('🔍 Updated canvasItems:', updatedCanvasItems);
+        
+        // ✅ CRITICAL: Update local React state with the new canvas items containing Excel URLs
+        if (onCanvasItemsUpdate) {
+          onCanvasItemsUpdate(updatedCanvasItems);
+        }
+        
+        const updatedState: ExcelEditWorkflowState = {
+          ...workflowState,
+          currentEditingItem: updatedCurrentEditingItem,
+          canvasItems: updatedCanvasItems
+        };
+        
+        console.log('💾 About to save to item definition with format:', {
+          hasStateWrapper: true,
+          canvasItemsCount: updatedCanvasItems.length,
+          firstCanvasItemHasUrls: !!(updatedCanvasItems[0] as any)?.excelWebUrl
+        });
+        
+        // Save to item definition
+        const savePayload = { state: updatedState } as ExcelEditItemDefinition;
+        console.log('💾 Save payload structure:', Object.keys(savePayload));
+        await saveItemDefinition(workloadClient, item?.id || '', savePayload);
+        console.log('✅ Excel URLs saved to both currentEditingItem and canvasItems');
+      }
       
-      // Step 4: Show embedded Excel preview
+      // Notify parent component about the URL change (for ribbon button)
+      if (onExcelWebUrlChange) {
+        onExcelWebUrlChange(uploadResult.webUrl);
+      }
+      
+      // Step 5: Show embedded Excel preview
       if (uploadResult.embedUrl) {
         console.log('📊 Setting embedded Excel viewer URL...');
         // Set the embed URL to display in the iframe
@@ -509,8 +613,8 @@ function TableEditorView({
       // Show success notification with instruction
       await callNotificationOpen(
         workloadClient,
-        'Excel file ready!',
-        `${fileName} uploaded to OneDrive. Click "Open in Excel Online" button above the preview for full editing capabilities.`,
+        'Excel file created and linked!',
+        `${fileName} uploaded to OneDrive and automatically saved to this item. Use "Open in Excel Online" button for full editing.`,
         NotificationType.Success,
         NotificationToastDuration.Long
       );
@@ -573,197 +677,7 @@ function TableEditorView({
           >
             {currentEditingItem.displayName}
           </Text>
-          <Text 
-            size={400} 
-            className="table-subtitle"
-            style={{ 
-              margin: 0, 
-              padding: 0, 
-              textAlign: 'left',
-              display: 'block',
-              width: '100%'
-            }}
-          >
-            Excel editing interface - Changes sync to lakehouse
-          </Text>
         </div>
-      </div>
-
-      <div className="table-editor-actions">
-        <Button
-          appearance="primary"
-          icon={isLoadingExcel ? <Spinner size="tiny" /> : <TableSimple20Regular />}
-          disabled={isLoadingExcel}
-          onClick={async () => {
-            console.log('📥 CLIENT-SIDE: Creating Excel file with REAL DATA from Spark Livy...');
-            setIsLoadingExcel(true);
-            try {
-              // Import the client-side Excel utility
-              const { fetchAndDownloadLakehouseTable } = await import('../../utils/ExcelClientSide');
-              
-              if (currentEditingItem.source?.lakehouse?.id) {
-                // Has Lakehouse metadata - fetch real data using Spark Livy
-                // Note: SparkLivyClient handles its own token acquisition with proper scopes
-                await fetchAndDownloadLakehouseTable(
-                  workloadClient, // SparkLivyClient will get token internally with correct scopes
-                  currentEditingItem.source.lakehouse.workspaceId,
-                  currentEditingItem.source.lakehouse.id,
-                  currentEditingItem.name,
-                  sparkSessionId // Reuse existing Spark session if available
-                );
-              } else {
-                // No Lakehouse metadata - use demo data
-                const { createAndDownloadExcel } = await import('../../utils/ExcelClientSide');
-                await createAndDownloadExcel({
-                  tableName: currentEditingItem.name,
-                  schema: [
-                    { name: 'Customer ID', dataType: 'string' },
-                    { name: 'Name', dataType: 'string' },
-                    { name: 'Email', dataType: 'string' },
-                    { name: 'Status', dataType: 'string' }
-                  ],
-                  data: [
-                    ['CUST001', 'John Smith', 'john@example.com', 'Active'],
-                    ['CUST002', 'Jane Doe', 'jane@example.com', 'Active'],
-                    ['CUST003', 'Bob Johnson', 'bob@example.com', 'Inactive']
-                  ]
-                });
-              }
-              
-              console.log('✅ Excel downloaded with REAL DATA (Client-Side via Spark Livy)');
-            } catch (error) {
-              // Extract detailed error information
-              let errorMessage = 'Unknown error';
-              let errorDetails = '';
-              
-              if (error instanceof Error) {
-                errorMessage = error.message;
-                errorDetails = error.stack || '';
-              } else if (typeof error === 'object' && error !== null) {
-                // Handle error objects from auth/API calls
-                errorMessage = JSON.stringify(error, null, 2);
-              } else if (typeof error === 'string') {
-                errorMessage = error;
-              }
-              
-              console.error('❌ Client-side Excel creation failed:', {
-                error,
-                errorMessage,
-                errorType: typeof error,
-                errorConstructor: error?.constructor?.name
-              });
-              
-              // Check for common permission errors
-              const fullErrorText = `${errorMessage} ${errorDetails}`.toLowerCase();
-              
-              if (fullErrorText.includes('aadsts') || 
-                  fullErrorText.includes('consent') || 
-                  fullErrorText.includes('permission') ||
-                  fullErrorText.includes('unauthorized') ||
-                  fullErrorText.includes('401') ||
-                  fullErrorText.includes('403')) {
-                console.error(
-                  `⚠️ Permission Error Detected\n\n` +
-                  `The application needs the "Fabric.Extend" permission to access Spark Livy APIs.\n\n` +
-                  `To fix this:\n` +
-                  `1. Go to Azure Portal → Entra ID → App Registrations\n` +
-                  `2. Find app: ${process.env.FRONTEND_APPID}\n` +
-                  `3. Add API permission: Power BI Service → Fabric.Extend\n` +
-                  `4. Grant admin consent\n\n` +
-                  `Error Details:\n${errorMessage}`
-                );
-              } else {
-                console.error(`Failed to create Excel:\n\n${errorMessage}`)
-              }
-            } finally {
-              setIsLoadingExcel(false);
-            }
-          }}
-        >
-          {isLoadingExcel ? '⏳ Querying Data via Spark...' : '⚡ Download Excel with Real Data'}
-        </Button>
-
-        {excelFileInfo && excelFileInfo.fileId && (
-          <>
-            <Button
-              appearance="secondary"
-              icon={<ArrowDownload20Regular />}
-              onClick={() => {
-                // Download the Excel file to open in desktop Excel
-                const baseUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:60006' : window.location.origin;
-                const downloadUrl = `${baseUrl}/wopi/files/${excelFileInfo.fileId}/contents`;
-                
-                console.log('📥 Downloading Excel file...');
-                console.log('   Download URL:', downloadUrl);
-                
-                // Create download link
-                const a = document.createElement('a');
-                a.href = downloadUrl;
-                a.download = excelFileInfo.fileName || `${currentEditingItem.name}.xlsx`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                
-                console.log('✅ Excel file download started');
-              }}
-            >
-              Download Excel File
-            </Button>
-            
-            <Button
-              appearance="outline"
-              icon={<WindowNew20Regular />}
-              onClick={() => {
-                // Try to open in Excel Online (will open in new tab)
-                const baseUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:60006' : window.location.origin;
-                const wopiUrl = `${baseUrl}/wopi/files/${excelFileInfo.fileId}`;
-                const excelOnlineUrl = `https://excel.officeapps.live.com/x/_layouts/xlviewerinternal.aspx?ui=en-US&rs=en-US&WOPISrc=${encodeURIComponent(wopiUrl)}`;
-                
-                console.log('🌐 Attempting to open in Excel Online...');
-                console.log('   Note: This may not work from localhost due to CORS/security restrictions');
-                console.log('   WOPI URL:', wopiUrl);
-                
-                window.open(excelOnlineUrl, '_blank');
-              }}
-            >
-              Try Excel Online (New Tab)
-            </Button>
-          </>
-        )}
-
-        <Button
-          appearance="secondary"
-          icon={<Add20Regular />}
-          onClick={() => {
-            console.log('💾 Saving changes to lakehouse for table:', currentEditingItem.name);
-          }}
-        >
-          Save to Lakehouse
-        </Button>
-        
-        <Button
-          appearance="secondary"
-          icon={<Add20Regular />}
-          onClick={() => {
-            console.log('🔄 Refreshing data from lakehouse for table:', currentEditingItem.name);
-            loadExcelOnline(currentEditingItem);
-          }}
-        >
-          Refresh Data
-        </Button>
-
-        <Button
-          appearance="outline"
-          onClick={() => {
-            console.log('🔄 Switching to demo Excel interface');
-            const baseUrl = 'http://localhost:60006';
-            const fallbackFileId = `lakehouse_${currentEditingItem.name}_${Date.now()}`;
-            const fallbackUrl = `${baseUrl}/demo-excel?fileId=${fallbackFileId}&token=demo`;
-            setExcelOnlineUrl(fallbackUrl);
-          }}
-        >
-          Use Demo Excel
-        </Button>
       </div>
 
       {isLoadingExcel && (
@@ -800,73 +714,6 @@ function TableEditorView({
 
       {!isLoadingExcel && !showLocalViewer && excelOnlineUrl && (
         <>
-          <div className="excel-info-banner" style={{ 
-            padding: '16px', 
-            backgroundColor: '#FFF4CE', 
-            border: '1px solid #FFB900',
-            borderRadius: '4px',
-            marginBottom: '16px'
-          }}>
-            <Text size={400} weight="semibold">
-              💡 For the FULL Excel editing experience:
-            </Text>
-            <Text size={300} style={{ marginTop: '4px', display: 'block', marginBottom: '12px' }}>
-              The embedded view below is read-only preview. Click the button to open Excel Online in a new tab with full editing capabilities.
-            </Text>
-            <Button
-              appearance="primary"
-              icon={<WindowNew20Regular />}
-              onClick={() => {
-                console.log('🚀 Opening Excel Online in new tab for full editing...');
-                
-                // Use the stored webUrl if available
-                if (excelWebUrl) {
-                  // Ensure we have action=edit in the URL
-                  let editUrl = excelWebUrl;
-                  if (editUrl.includes('action=')) {
-                    editUrl = editUrl.replace(/action=[^&]+/, 'action=edit');
-                  } else {
-                    editUrl += (editUrl.includes('?') ? '&' : '?') + 'action=edit';
-                  }
-                  console.log('📍 Opening URL:', editUrl);
-                  
-                  // Try to open in new tab
-                  // Note: May be blocked by Fabric's iframe sandbox in production
-                  // Fallback: User can copy URL or use alternative method
-                  try {
-                    const opened = window.open(editUrl, '_blank');
-                    if (!opened || opened.closed || typeof opened.closed === 'undefined') {
-                      // Popup was blocked - show URL to user
-                      console.warn('⚠️ Popup blocked - showing URL to user');
-                      callNotificationOpen(
-                        workloadClient,
-                        'Copy this URL to edit in Excel Online',
-                        editUrl,
-                        NotificationType.Info,
-                        NotificationToastDuration.Long
-                      );
-                    }
-                  } catch (error) {
-                    console.error('❌ Failed to open new window:', error);
-                    // Show URL in notification as fallback
-                    callNotificationOpen(
-                      workloadClient,
-                      'Copy this URL to edit in Excel Online',
-                      editUrl,
-                      NotificationType.Info,
-                      NotificationToastDuration.Long
-                    );
-                  }
-                } else {
-                  // Fallback: try to extract from embed URL or open OneDrive
-                  console.log('⚠️ No webUrl available, opening OneDrive');
-                  window.open('https://onedrive.live.com/', '_blank');
-                }
-              }}
-            >
-              Open in Excel Online (Full Editor)
-            </Button>
-          </div>
           <div className="table-editor-iframe-container-clean">
             <iframe
               src={excelOnlineUrl}
@@ -888,14 +735,13 @@ function TableEditorView({
       {!isLoadingExcel && !showLocalViewer && !excelOnlineUrl && (
         <div className="empty-canvas">
           <div className="error-state">
-            <Text size={500} weight="semibold">Unable to load Excel Online</Text>
-            <Text size={400}>Please try refreshing or contact support</Text>
             <Button
               appearance="primary"
               onClick={() => loadExcelOnline(currentEditingItem)}
               className="error-retry"
+              icon={<TableSimple20Regular />}
             >
-              Retry Loading Excel
+              Create Excel Online File
             </Button>
           </div>
         </div>

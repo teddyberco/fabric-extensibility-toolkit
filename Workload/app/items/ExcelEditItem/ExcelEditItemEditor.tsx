@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { Stack } from "@fluentui/react";
 import { Button } from "@fluentui/react-components";
@@ -27,6 +27,8 @@ export function ExcelEditItemEditor(props: PageProps) {
   const [hasBeenSaved, setHasBeenSaved] = useState<boolean>(false);
   const [sparkSessionId, setSparkSessionId] = useState<string | null>(null);
   const [isSparkSessionStarting, setIsSparkSessionStarting] = useState(false);
+  const [excelWebUrl, setExcelWebUrl] = useState<string>(''); // Excel Online URL for ribbon button
+  const addTableCallbackRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   const { pathname } = useLocation();
 
@@ -252,6 +254,69 @@ export function ExcelEditItemEditor(props: PageProps) {
     }
   };
 
+  // Callback for opening Excel Online in new tab from ribbon
+  const handleOpenInExcelOnline = () => {
+    console.log('🚀 Opening Excel Online in new tab for full editing...');
+    
+    if (excelWebUrl) {
+      // Ensure we have action=edit in the URL
+      let editUrl = excelWebUrl;
+      if (editUrl.includes('action=')) {
+        editUrl = editUrl.replace(/action=[^&]+/, 'action=edit');
+      } else {
+        editUrl += (editUrl.includes('?') ? '&' : '?') + 'action=edit';
+      }
+      console.log('📍 Opening URL:', editUrl);
+      
+      // Try to open in new tab
+      try {
+        const opened = window.open(editUrl, '_blank');
+        if (!opened || opened.closed || typeof opened.closed === 'undefined') {
+          // Popup was blocked - show URL to user
+          console.warn('⚠️ Popup blocked - showing URL to user');
+          callNotificationOpen(
+            workloadClient,
+            'Copy this URL to edit in Excel Online',
+            editUrl,
+            undefined,
+            undefined
+          );
+        }
+      } catch (error) {
+        console.error('❌ Failed to open new window:', error);
+        // Show URL in notification as fallback
+        callNotificationOpen(
+          workloadClient,
+          'Copy this URL to edit in Excel Online',
+          editUrl,
+          undefined,
+          undefined
+        );
+      }
+    } else {
+      console.log('⚠️ No webUrl available');
+      callNotificationOpen(
+        workloadClient,
+        'Excel Online Not Ready',
+        'Please wait for the Excel file to upload to OneDrive first.',
+        undefined,
+        undefined
+      );
+    }
+  };
+
+  // Callback for saving to lakehouse from ribbon
+  const handleSaveToLakehouse = async () => {
+    console.log('💾 Saving changes to lakehouse...');
+    callNotificationOpen(
+      workloadClient,
+      'Save to Lakehouse',
+      'This feature is coming soon! Changes will be synced back to your lakehouse table.',
+      undefined,
+      undefined
+    );
+  };
+
   async function SaveItem() {
     if (!item?.definition?.state) {
       console.error('❌ No item state to save');
@@ -307,48 +372,33 @@ export function ExcelEditItemEditor(props: PageProps) {
   // Render appropriate view based on state
   return (
     <Stack className="editor" data-testid="item-editor-inner">
-      {/* Back to Canvas button - shown above ribbon for table editor */}
+      {/* Back to Home button - shown above ribbon for table editor */}
       {currentView === VIEW_TYPES.TABLE_EDITOR && (
         <div className="back-to-home-container">
           <Button 
             appearance="subtle" 
             onClick={async () => {
-              console.log('🏠 Back to Canvas clicked - clearing editing state');
+              console.log('🏠 Back to Home clicked - clearing editing state');
               
-              // Clear current editing context when going back
-              const currentState = item?.definition?.state as ExcelEditWorkflowState;
-              if (currentState && item) {
-                const updatedState: ExcelEditWorkflowState = {
-                  ...currentState,
-                  currentEditingItem: undefined,
-                  workflowStep: 'canvas-overview'
-                };
-                
-                console.log('🧹 Clearing editing state:', { 
-                  currentEditingItem: updatedState.currentEditingItem, 
-                  workflowStep: updatedState.workflowStep 
-                });
-
-                try {
-                  await saveItemDefinition<ExcelEditItemDefinition>(
-                    workloadClient,
-                    item.id,
-                    { state: updatedState }
-                  );
-                  
-                  console.log('✅ Editing state cleared and saved');
-                  
-                  // Update local state
-                  setItem({
-                    ...item,
-                    definition: {
-                      ...item.definition,
-                      state: updatedState
+              // ⚠️ CRITICAL: Don't save when going back - just navigate!
+              // The Excel URLs were already saved during upload, and we don't want to overwrite them
+              // with stale state data. Just clear the local editing context and navigate.
+              console.log('🧹 Clearing local editing state (not saving to avoid overwriting URLs)');
+              
+              if (item) {
+                const currentState = item.definition?.state as ExcelEditWorkflowState;
+                // Update local state only (don't save to backend)
+                setItem({
+                  ...item,
+                  definition: {
+                    ...item.definition,
+                    state: {
+                      ...currentState,
+                      currentEditingItem: undefined,
+                      workflowStep: 'canvas-overview'
                     }
-                  });
-                } catch (error) {
-                  console.error('❌ Failed to clear editing context:', error);
-                }
+                  }
+                });
               }
               
               // Navigate to canvas overview
@@ -356,7 +406,7 @@ export function ExcelEditItemEditor(props: PageProps) {
             }}
             icon={<span>←</span>}
           >
-            Back to Canvas
+            Back to Home
           </Button>
         </div>
       )}
@@ -371,12 +421,18 @@ export function ExcelEditItemEditor(props: PageProps) {
         startSparkSessionCallback={handleStartSparkSession}
         isSparkSessionStarting={isSparkSessionStarting}
         sparkSessionId={sparkSessionId}
+        openInExcelOnlineCallback={handleOpenInExcelOnline}
+        saveToLakehouseCallback={handleSaveToLakehouse}
+        excelWebUrl={excelWebUrl}
+        addTableCallback={addTableCallbackRef.current}
       />
       {currentView === VIEW_TYPES.EMPTY ? (
         <ExcelEditItemEditorEmpty
           workloadClient={workloadClient}
           item={item}
           onNavigateToCanvasOverview={navigateToCanvasOverview}
+          onAddTableCallbackChange={(callback) => { addTableCallbackRef.current = callback; }}
+          onItemUpdate={setItem}
         />
       ) : currentView === VIEW_TYPES.CANVAS_OVERVIEW ? (
         <ExcelEditItemEditorDefault
@@ -385,6 +441,8 @@ export function ExcelEditItemEditor(props: PageProps) {
           currentView={currentView}
           onNavigateToTableEditor={navigateToTableEditor}
           sparkSessionId={sparkSessionId}
+          onAddTableCallbackChange={(callback) => { addTableCallbackRef.current = callback; }}
+          onItemUpdate={setItem}
         />
       ) : (
         <ExcelEditItemEditorDefault
@@ -393,6 +451,7 @@ export function ExcelEditItemEditor(props: PageProps) {
           currentView={currentView}
           onNavigateToCanvasOverview={navigateToCanvasOverview}
           sparkSessionId={sparkSessionId}
+          onExcelWebUrlChange={setExcelWebUrl}
         />
       )}
     </Stack>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Button, Text } from "@fluentui/react-components";
 import { CloudDatabase20Regular, DatabaseSearch20Regular } from "@fluentui/react-icons";
 import { callDatahubWizardOpen } from "../../controller/DataHubController";
@@ -12,6 +12,8 @@ interface ExcelEditItemEditorEmptyProps {
   workloadClient: WorkloadClientAPI;
   item?: ItemWithDefinition<ExcelEditItemDefinition>;
   onNavigateToCanvasOverview: () => void;
+  onAddTableCallbackChange?: (callback: (() => Promise<void>) | undefined) => void;
+  onItemUpdate?: (updatedItem: ItemWithDefinition<ExcelEditItemDefinition>) => void;
 }
 
 /**
@@ -21,11 +23,13 @@ interface ExcelEditItemEditorEmptyProps {
 export function ExcelEditItemEditorEmpty({
   workloadClient,
   item,
-  onNavigateToCanvasOverview
+  onNavigateToCanvasOverview,
+  onAddTableCallbackChange,
+  onItemUpdate
 }: ExcelEditItemEditorEmptyProps) {
   const [isLoading, setIsLoading] = useState(false);
 
-  const loadLakehouses = async () => {
+  const loadLakehouses = useCallback(async () => {
     setIsLoading(true);
     
     try {
@@ -103,6 +107,19 @@ export function ExcelEditItemEditorEmpty({
             
             if (saveResult) {
               console.log('✅ Table selection saved to Fabric SDK successfully');
+              
+              // ✅ Update parent item state
+              if (onItemUpdate && item) {
+                const updatedItem: ItemWithDefinition<ExcelEditItemDefinition> = {
+                  ...item,
+                  definition: {
+                    ...item.definition,
+                    state: updatedState
+                  }
+                };
+                onItemUpdate(updatedItem);
+              }
+              
               console.log('⏳ Waiting brief moment for state propagation...');
               
               // Give the state a moment to propagate before navigating
@@ -164,7 +181,20 @@ export function ExcelEditItemEditorEmpty({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [workloadClient, item, onNavigateToCanvasOverview, onItemUpdate]);
+
+  // Register the Add Table callback with parent so it can be used in the ribbon
+  useEffect(() => {
+    if (onAddTableCallbackChange) {
+      onAddTableCallbackChange(loadLakehouses);
+    }
+    // Cleanup: unregister callback when component unmounts
+    return () => {
+      if (onAddTableCallbackChange) {
+        onAddTableCallbackChange(undefined);
+      }
+    };
+  }, [onAddTableCallbackChange, loadLakehouses]);
 
   return (
     <div className="empty-state-container">

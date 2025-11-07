@@ -8,7 +8,10 @@ import {
   Save24Regular,
   Settings24Regular,
   Rocket24Regular,
-  Flash24Regular
+  Flash24Regular,
+  WindowNew24Regular,
+  DatabaseArrowUp20Regular,
+  Add20Regular
 } from "@fluentui/react-icons";
 import { PageProps } from '../../App';
 import { CurrentView, VIEW_TYPES } from "./ExcelEditItemModel";
@@ -27,6 +30,10 @@ export interface ExcelEditItemRibbonProps extends PageProps {
   startSparkSessionCallback?: () => Promise<void>;
   isSparkSessionStarting?: boolean;
   sparkSessionId?: string | null;
+  openInExcelOnlineCallback?: () => void;
+  saveToLakehouseCallback?: () => Promise<void>;
+  excelWebUrl?: string;
+  addTableCallback?: () => Promise<void>;
 }
 
 
@@ -55,18 +62,37 @@ const ExcelEditItemTabToolbar: React.FC<ExcelEditItemRibbonProps> = (props) => {
 
   return (
     <Toolbar>
-      {/* Save Button - Disabled */}
-      <Tooltip
-        content={t("ItemEditor_Ribbon_Save_Label")}
-        relationship="label">
-        <ToolbarButton
-          disabled={!props.isSaveButtonEnabled}
-          aria-label={t("ItemEditor_Ribbon_Save_Label")}
-          data-testid="item-editor-save-btn"
-          icon={<Save24Regular />}
-          onClick={onSaveAsClicked}
-        />
-      </Tooltip>
+      {/* Add Table Button - Only show in Canvas Overview */}
+      {props.currentView === VIEW_TYPES.CANVAS_OVERVIEW && props.addTableCallback && (
+        <Tooltip
+          content="Add a table from your Lakehouse"
+          relationship="label">
+          <ToolbarButton
+            aria-label="Add Table"
+            data-testid="item-editor-add-table-btn"
+            icon={<Add20Regular />}
+            onClick={props.addTableCallback}
+            appearance="primary"
+          >
+            Add Table
+          </ToolbarButton>
+        </Tooltip>
+      )}
+
+      {/* Save Button - Only show in Canvas Overview and Empty views, not in Table Editor */}
+      {props.currentView !== VIEW_TYPES.TABLE_EDITOR && (
+        <Tooltip
+          content={t("ItemEditor_Ribbon_Save_Label")}
+          relationship="label">
+          <ToolbarButton
+            disabled={!props.isSaveButtonEnabled}
+            aria-label={t("ItemEditor_Ribbon_Save_Label")}
+            data-testid="item-editor-save-btn"
+            icon={<Save24Regular />}
+            onClick={onSaveAsClicked}
+          />
+        </Tooltip>
+      )}
 
       {/* Settings Button */}
       <Tooltip
@@ -98,6 +124,40 @@ const ExcelEditItemTabToolbar: React.FC<ExcelEditItemRibbonProps> = (props) => {
             appearance={props.sparkSessionId ? "primary" : "subtle"}
           >
             {props.isSparkSessionStarting ? "Starting..." : props.sparkSessionId ? "Session Ready" : "Start Spark"}
+          </ToolbarButton>
+        </Tooltip>
+      )}
+
+      {/* Open in Excel Online Button - Always show in Table Editor, disabled when no URL */}
+      {props.currentView === VIEW_TYPES.TABLE_EDITOR && props.openInExcelOnlineCallback && (
+        <Tooltip
+          content={props.excelWebUrl ? t("Open in Excel Online (Full Editor)") : t("Creating Excel file... Please wait")}
+          relationship="label">
+          <ToolbarButton
+            aria-label={t("Open in Excel Online")}
+            data-testid="open-excel-online-btn"
+            icon={<WindowNew24Regular />}
+            onClick={props.openInExcelOnlineCallback}
+            appearance="primary"
+            disabled={!props.excelWebUrl}
+          >
+            Open in Excel Online
+          </ToolbarButton>
+        </Tooltip>
+      )}
+
+      {/* Save to Lakehouse Button - Only show in Table Editor */}
+      {props.currentView === VIEW_TYPES.TABLE_EDITOR && props.saveToLakehouseCallback && (
+        <Tooltip
+          content={t("Save Excel data back to Lakehouse")}
+          relationship="label">
+          <ToolbarButton
+            aria-label={t("Save to Lakehouse")}
+            data-testid="save-to-lakehouse-btn"
+            icon={<DatabaseArrowUp20Regular />}
+            onClick={props.saveToLakehouseCallback}
+          >
+            Save to Lakehouse
           </ToolbarButton>
         </Tooltip>
       )}

@@ -16,6 +16,8 @@ export interface ExcelEditWorkflowState {
     };
     lastEdited?: string;
     hasUnsavedChanges?: boolean;
+    excelWebUrl?: string; // OneDrive/SharePoint URL for Excel Online editing
+    excelEmbedUrl?: string; // Office Online embed URL for preview
   }>;
   
   // Current editing context (for L2 table editor)
@@ -24,6 +26,8 @@ export interface ExcelEditWorkflowState {
     type: 'lakehouse-table' | 'uploaded-file' | 'external-source';
     name: string;
     displayName: string;
+    excelWebUrl?: string; // OneDrive/SharePoint URL for Excel Online editing
+    excelEmbedUrl?: string; // Office Online embed URL for preview
   };
   
   // Lakehouse selection state (legacy compatibility)
