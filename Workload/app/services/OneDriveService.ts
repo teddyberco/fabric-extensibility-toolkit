@@ -83,7 +83,7 @@ export class OneDriveService {
     accessToken: string
   ): Promise<string | undefined> {
     try {
-      console.log('🔗 Getting Office Online embed URL...');
+      console.log('🔗 Getting Office Online EDIT URL (not just preview)...');
 
       const previewUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/preview`;
       const previewResponse = await fetch(previewUrl, {
@@ -94,7 +94,9 @@ export class OneDriveService {
         },
         body: JSON.stringify({
           viewer: 'excel',
-          chromeless: false
+          chromeless: false,
+          // Request EDIT mode instead of view-only mode
+          allowEdit: true
         })
       });
 
@@ -105,7 +107,22 @@ export class OneDriveService {
 
       const previewData = await previewResponse.json();
       console.log('✅ Office Online embed URL retrieved');
-      return previewData.getUrl;
+      console.log('📍 Embed URL type:', previewData.getUrl?.includes('action=edit') ? 'EDIT MODE' : 'VIEW MODE');
+      
+      // If preview API gives us view-only, construct the edit URL manually
+      let editUrl = previewData.getUrl;
+      if (editUrl && !editUrl.includes('action=edit')) {
+        console.log('⚠️ Got view-only URL, attempting to convert to edit URL...');
+        // Replace action=view with action=edit or add action=edit parameter
+        if (editUrl.includes('action=')) {
+          editUrl = editUrl.replace(/action=[^&]+/, 'action=edit');
+        } else {
+          editUrl += (editUrl.includes('?') ? '&' : '?') + 'action=edit';
+        }
+        console.log('✅ Converted to edit URL');
+      }
+      
+      return editUrl;
     } catch (error) {
       console.warn('⚠️ Error getting embed URL:', error);
       return undefined;

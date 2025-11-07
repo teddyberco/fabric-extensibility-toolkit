@@ -409,6 +409,7 @@ function TableEditorView({
 }) {
   const [currentEditingItem, setCurrentEditingItem] = useState<any>(null);
   const [excelOnlineUrl, setExcelOnlineUrl] = useState<string>('');
+  const [excelWebUrl, setExcelWebUrl] = useState<string>(''); // Store the webUrl for opening in new tab
   const [isLoadingExcel, setIsLoadingExcel] = useState(false);
   const [excelFileInfo, setExcelFileInfo] = useState<{fileId: string, fileName: string, tableName: string} | null>(null);
   const [showLocalViewer, setShowLocalViewer] = useState(false);
@@ -491,7 +492,10 @@ function TableEditorView({
       
       console.log('✅ Upload successful:', uploadResult);
       
-      // Step 4: Show embedded Excel or open in new tab
+      // Store both embed URL and web URL
+      setExcelWebUrl(uploadResult.webUrl); // Store for "Open in new tab" button
+      
+      // Step 4: Show embedded Excel preview
       if (uploadResult.embedUrl) {
         console.log('📊 Setting embedded Excel viewer URL...');
         // Set the embed URL to display in the iframe
@@ -502,11 +506,11 @@ function TableEditorView({
         setExcelOnlineUrl(uploadResult.webUrl);
       }
       
-      // Show success notification
+      // Show success notification with instruction
       await callNotificationOpen(
         workloadClient,
-        'Excel file uploaded to OneDrive',
-        `${fileName} is now available in your OneDrive`,
+        'Excel file ready!',
+        `${fileName} uploaded to OneDrive. Click "Open in Excel Online" button above the preview for full editing capabilities.`,
         NotificationType.Success,
         NotificationToastDuration.Long
       );
@@ -795,21 +799,90 @@ function TableEditorView({
       )}
 
       {!isLoadingExcel && !showLocalViewer && excelOnlineUrl && (
-        <div className="table-editor-iframe-container-clean">
-          <iframe
-            src={excelOnlineUrl}
-            className="table-editor-iframe"
-            title={`Excel Online - ${currentEditingItem.name}`}
-            onLoad={(e) => {
-              console.log('✅ Excel Online iframe loaded (may have errors due to localhost restrictions)');
-              console.log('📍 Loaded URL:', excelOnlineUrl);
-            }}
-            onError={(e) => {
-              console.error('❌ Excel Online iframe failed to load');
-              console.error('   URL:', excelOnlineUrl);
-            }}
-          />
-        </div>
+        <>
+          <div className="excel-info-banner" style={{ 
+            padding: '16px', 
+            backgroundColor: '#FFF4CE', 
+            border: '1px solid #FFB900',
+            borderRadius: '4px',
+            marginBottom: '16px'
+          }}>
+            <Text size={400} weight="semibold">
+              💡 For the FULL Excel editing experience:
+            </Text>
+            <Text size={300} style={{ marginTop: '4px', display: 'block', marginBottom: '12px' }}>
+              The embedded view below is read-only preview. Click the button to open Excel Online in a new tab with full editing capabilities.
+            </Text>
+            <Button
+              appearance="primary"
+              icon={<WindowNew20Regular />}
+              onClick={() => {
+                console.log('🚀 Opening Excel Online in new tab for full editing...');
+                
+                // Use the stored webUrl if available
+                if (excelWebUrl) {
+                  // Ensure we have action=edit in the URL
+                  let editUrl = excelWebUrl;
+                  if (editUrl.includes('action=')) {
+                    editUrl = editUrl.replace(/action=[^&]+/, 'action=edit');
+                  } else {
+                    editUrl += (editUrl.includes('?') ? '&' : '?') + 'action=edit';
+                  }
+                  console.log('📍 Opening URL:', editUrl);
+                  
+                  // Try to open in new tab
+                  // Note: May be blocked by Fabric's iframe sandbox in production
+                  // Fallback: User can copy URL or use alternative method
+                  try {
+                    const opened = window.open(editUrl, '_blank');
+                    if (!opened || opened.closed || typeof opened.closed === 'undefined') {
+                      // Popup was blocked - show URL to user
+                      console.warn('⚠️ Popup blocked - showing URL to user');
+                      callNotificationOpen(
+                        workloadClient,
+                        'Copy this URL to edit in Excel Online',
+                        editUrl,
+                        NotificationType.Info,
+                        NotificationToastDuration.Long
+                      );
+                    }
+                  } catch (error) {
+                    console.error('❌ Failed to open new window:', error);
+                    // Show URL in notification as fallback
+                    callNotificationOpen(
+                      workloadClient,
+                      'Copy this URL to edit in Excel Online',
+                      editUrl,
+                      NotificationType.Info,
+                      NotificationToastDuration.Long
+                    );
+                  }
+                } else {
+                  // Fallback: try to extract from embed URL or open OneDrive
+                  console.log('⚠️ No webUrl available, opening OneDrive');
+                  window.open('https://onedrive.live.com/', '_blank');
+                }
+              }}
+            >
+              Open in Excel Online (Full Editor)
+            </Button>
+          </div>
+          <div className="table-editor-iframe-container-clean">
+            <iframe
+              src={excelOnlineUrl}
+              className="table-editor-iframe"
+              title={`Excel Online - ${currentEditingItem.name}`}
+              onLoad={(e) => {
+                console.log('✅ Excel Online iframe loaded (may have errors due to localhost restrictions)');
+                console.log('📍 Loaded URL:', excelOnlineUrl);
+              }}
+              onError={(e) => {
+                console.error('❌ Excel Online iframe failed to load');
+                console.error('   URL:', excelOnlineUrl);
+              }}
+            />
+          </div>
+        </>
       )}
 
       {!isLoadingExcel && !showLocalViewer && !excelOnlineUrl && (
