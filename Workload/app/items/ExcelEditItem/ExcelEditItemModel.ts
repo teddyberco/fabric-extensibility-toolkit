@@ -18,6 +18,8 @@ export interface ExcelEditWorkflowState {
     hasUnsavedChanges?: boolean;
     excelWebUrl?: string; // OneDrive/SharePoint URL for Excel Online editing
     excelEmbedUrl?: string; // Office Online embed URL for preview
+    excelFileId?: string; // OneDrive file ID for token refresh
+    isCreatingExcel?: boolean; // Flag to indicate Excel creation in progress
   }>;
   
   // Current editing context (for L2 table editor)
@@ -28,6 +30,7 @@ export interface ExcelEditWorkflowState {
     displayName: string;
     excelWebUrl?: string; // OneDrive/SharePoint URL for Excel Online editing
     excelEmbedUrl?: string; // Office Online embed URL for preview
+    excelFileId?: string; // OneDrive file ID for token refresh
   };
   
   // Lakehouse selection state (legacy compatibility)

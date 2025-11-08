@@ -81,13 +81,18 @@ export async function getOrCreateSparkSession(
     if ((createResponse as any).operationId) {
       console.log(`[SparkQueryHelper] Session creation is async, polling for completion...`);
       
-      // Poll for the session to appear (max 2 minutes)
+      // Poll for the session to appear (max 60 seconds, 20 attempts)
       const startTime = Date.now();
-      const maxWaitMs = 120000; // 2 minutes
+      const maxWaitMs = 60000; // 1 minute
       const pollIntervalMs = 3000; // 3 seconds
+      const maxAttempts = 20;
+      let attemptCount = 0;
       
-      while (Date.now() - startTime < maxWaitMs) {
+      while (Date.now() - startTime < maxWaitMs && attemptCount < maxAttempts) {
+        attemptCount++;
         await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+        
+        console.log(`[SparkQueryHelper] Polling attempt ${attemptCount}/${maxAttempts}...`);
         
         const sessionsResponse = await sparkClient.listSessions(workspaceId, lakehouseId);
         const sessionsList = Array.isArray(sessionsResponse) 
@@ -97,16 +102,20 @@ export async function getOrCreateSparkSession(
         console.log(`[SparkQueryHelper] Polling: Found ${sessionsList.length} sessions`);
         console.log(`[SparkQueryHelper] Looking for session named: ${sessionRequest.name}`);
         
-        // Log all session names to debug
+        // Log first few session names to debug (not all 82!)
         if (sessionsList.length > 0) {
-          const sessionNames = sessionsList.map((s: any) => `${s.name || 'unnamed'} (${s.id}, ${s.state})`);
-          console.log(`[SparkQueryHelper] Current sessions:`, sessionNames);
+          const firstFew = sessionsList.slice(0, 5);
+          const sessionNames = firstFew.map((s: any) => `${s.name || 'unnamed'} (${s.id}, ${s.state})`);
+          console.log(`[SparkQueryHelper] First ${firstFew.length} sessions:`, sessionNames);
+          if (sessionsList.length > 5) {
+            console.log(`[SparkQueryHelper] ...and ${sessionsList.length - 5} more`);
+          }
         }
         
         // Find our newly created session by name
         const newSession = sessionsList.find((s: any) => s.name === sessionRequest.name);
         if (newSession) {
-          console.log(`[SparkQueryHelper] Session found: ${newSession.id}, state: ${newSession.state}`);
+          console.log(`[SparkQueryHelper] ✅ Session found after ${attemptCount} attempts: ${newSession.id}, state: ${newSession.state}`);
           
           // Wait for it to be ready if not already
           if (newSession.state !== 'idle') {
@@ -116,10 +125,12 @@ export async function getOrCreateSparkSession(
           return newSession;
         }
         
-        console.log(`[SparkQueryHelper] Session not yet available, waiting ${pollIntervalMs}ms...`);
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        console.log(`[SparkQueryHelper] Session not yet available after ${elapsed}s, attempt ${attemptCount}/${maxAttempts}...`);
       }
       
-      throw new Error('Timeout waiting for session to be created');
+      const finalElapsed = Math.round((Date.now() - startTime) / 1000);
+      throw new Error(`Timeout waiting for session to be created (waited ${finalElapsed}s, ${attemptCount} attempts). The Spark cluster may be busy or the session creation failed.`);
     }
     
     // If we got a direct session response (synchronous)

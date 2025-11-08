@@ -4,11 +4,19 @@ import {
   Text,
   Spinner,
   Tooltip,
+  Menu,
+  MenuTrigger,
+  MenuPopover,
+  MenuList,
+  MenuItem,
 } from "@fluentui/react-components";
 import {
   DatabaseSearch20Regular,
   TableSimple20Regular,
   Delete20Regular,
+  TableAdd20Regular,
+  WindowNew24Regular,
+  ChevronDown20Regular,
 } from "@fluentui/react-icons";
 import { WorkloadClientAPI, NotificationType, NotificationToastDuration } from "@ms-fabric/workload-client";
 import { ItemWithDefinition, saveItemDefinition } from "../../controller/ItemCRUDController";
@@ -30,6 +38,7 @@ interface CanvasItem {
   };
   lastEdited?: string;
   hasUnsavedChanges?: boolean;
+  isCreatingExcel?: boolean;
 }
 
 interface ExcelEditItemEditorDefaultProps {
@@ -93,6 +102,7 @@ export function ExcelEditItemEditorDefault({
       setCanvasItems={setCanvasItems}
       onAddTableCallbackChange={onAddTableCallbackChange}
       onItemUpdate={onItemUpdate}
+      sparkSessionId={sparkSessionId}
     />;
   } else if (currentView === VIEW_TYPES.TABLE_EDITOR) {
     console.log('📊 Rendering TableEditorView');
@@ -118,7 +128,8 @@ function CanvasOverviewView({
   canvasItems,
   setCanvasItems,
   onAddTableCallbackChange,
-  onItemUpdate
+  onItemUpdate,
+  sparkSessionId
 }: {
   workloadClient: WorkloadClientAPI;
   item?: ItemWithDefinition<ExcelEditItemDefinition>;
@@ -127,8 +138,18 @@ function CanvasOverviewView({
   setCanvasItems: (items: CanvasItem[]) => void;
   onAddTableCallbackChange?: (callback: (() => Promise<void>) | undefined) => void;
   onItemUpdate?: (updatedItem: ItemWithDefinition<ExcelEditItemDefinition>) => void;
+  sparkSessionId?: string | null;
 }) {
   const [isLoading, setIsLoading] = useState(false);
+  
+  // 🎯 CLEAN: Single source of truth - manage canvasItems locally with React state
+  const [localCanvasItems, setLocalCanvasItems] = useState<CanvasItem[]>(canvasItems);
+  
+  // Sync with parent on mount and when parent changes (e.g., page reload)
+  useEffect(() => {
+    console.log('📥 Syncing canvas items from parent');
+    setLocalCanvasItems(canvasItems);
+  }, [canvasItems.length]); // Only sync when array length changes to avoid infinite loops
   
   // Use useCallback to memoize the handleAddTable function
   const handleAddTable = useCallback(async () => {
@@ -148,9 +169,11 @@ function CanvasOverviewView({
       );
       
       console.log('📊 OneLake catalog result:', result);
+      console.log('📊 Full result object:', JSON.stringify(result, null, 2));
       console.log('📊 Selected path:', result?.selectedPath);
       console.log('📊 Workspace ID:', result?.workspaceId);
       console.log('📊 Lakehouse ID:', result?.id);
+      console.log('📊 Display Name:', result?.displayName);
       
       if (result && result.selectedPath) {
         console.log('✅ Selected path from OneLake:', result.selectedPath);
@@ -159,9 +182,23 @@ function CanvasOverviewView({
         const workspaceId = result.workspaceId; // Workspace containing the Lakehouse
         const lakehouseId = result.id; // Lakehouse item ID
         
-        console.log('🔑 Captured IDs for Spark data fetching:');
+        // Fetch lakehouse name using the Fabric Platform API since displayName is empty
+        let lakehouseName = 'Unknown Lakehouse';
+        try {
+          console.log('🔍 Fetching lakehouse details from Fabric API - Workspace:', workspaceId, 'Item:', lakehouseId);
+          const { ItemClient } = await import('../../clients/ItemClient');
+          const itemClient = new ItemClient(workloadClient);
+          const lakehouseItem = await itemClient.getItem(workspaceId, lakehouseId);
+          lakehouseName = lakehouseItem.displayName || 'Unknown Lakehouse';
+          console.log('✅ Fetched lakehouse name from Fabric API:', lakehouseName);
+        } catch (error) {
+          console.warn('⚠️ Could not fetch lakehouse name from Fabric API, using default:', error);
+        }
+        
+        console.log('🔑 Captured data for Spark fetching:');
         console.log('   Workspace ID:', workspaceId);
         console.log('   Lakehouse ID:', lakehouseId);
+        console.log('   Lakehouse Name:', lakehouseName);
         
         try {
           const pathSegments = result.selectedPath.split('/');
@@ -181,16 +218,8 @@ function CanvasOverviewView({
               // Extract table name
               const table = pathSegments[tableIndex];
               
-              // Extract lakehouse name (if available)
-              let lakehouseName = 'Unknown Lakehouse';
-              if (tablesIndex > 0) {
-                lakehouseName = pathSegments[tablesIndex - 1];
-              } else if (result.displayName) {
-                lakehouseName = result.displayName;
-              }
-              
-              console.log('🏠 Extracted lakehouse name:', lakehouseName);
               console.log('📊 Extracted table:', table);
+              console.log('🏠 Using lakehouse name:', lakehouseName);
             
               const newCanvasItem: CanvasItem = {
                 id: `${lakehouseId}-${table}`, // Use lakehouse ID for uniqueness
@@ -200,7 +229,7 @@ function CanvasOverviewView({
                 source: {
                   lakehouse: { 
                     id: lakehouseId,           // ✅ REAL Lakehouse ID
-                    name: lakehouseName, 
+                    name: lakehouseName,       // ✅ From result.displayName
                     workspaceId: workspaceId   // ✅ REAL Workspace ID
                   },
                   table: { name: table, displayName: table, schema: [], rowCount: 0 }
@@ -208,41 +237,49 @@ function CanvasOverviewView({
                 lastEdited: new Date().toISOString()
               };
               
-              const updatedCanvasItems = [...canvasItems, newCanvasItem];
-              setCanvasItems(updatedCanvasItems);
-              
-              const currentState = item?.definition?.state as ExcelEditWorkflowState || {};
-              const updatedState: ExcelEditWorkflowState = {
-                ...currentState,
-                canvasItems: updatedCanvasItems
-              };
-              
-              if (workloadClient && item) {
-                try {
-                  await saveItemDefinition(workloadClient, item.id, { state: updatedState } as ExcelEditItemDefinition);
-                  console.log('✅ Table added to canvas and saved to item definition!');
-                  
-                  // ✅ CRITICAL: Update parent's item state with fresh data
-                  if (onItemUpdate) {
-                    const updatedItem: ItemWithDefinition<ExcelEditItemDefinition> = {
-                      ...item,
-                      definition: {
-                        ...item.definition,
-                        state: updatedState
+              // 🔧 REFACTORED: Use functional setState to add new item
+              setLocalCanvasItems(currentItems => {
+                const updated = [...currentItems, newCanvasItem];
+                
+                // Update parent and persist
+                setCanvasItems(updated);
+                
+                const currentState = item?.definition?.state as ExcelEditWorkflowState || {};
+                const updatedState: ExcelEditWorkflowState = {
+                  ...currentState,
+                  canvasItems: updated
+                };
+                
+                if (workloadClient && item) {
+                  saveItemDefinition(workloadClient, item.id, { state: updatedState } as ExcelEditItemDefinition)
+                    .then(() => {
+                      console.log('✅ Table added to canvas and saved to item definition!');
+                      
+                      // Update parent's item state
+                      if (onItemUpdate) {
+                        const updatedItem: ItemWithDefinition<ExcelEditItemDefinition> = {
+                          ...item,
+                          definition: {
+                            ...item.definition,
+                            state: updatedState
+                          }
+                        };
+                        onItemUpdate(updatedItem);
+                        console.log('✅ Parent item state updated with new canvas items');
                       }
-                    };
-                    onItemUpdate(updatedItem);
-                    console.log('✅ Parent item state updated with new canvas items');
-                  }
-                } catch (saveError) {
-                  console.error('❌ Error saving canvas state:', saveError);
-                  console.error('❌ Save error details:', {
-                    message: saveError.message,
-                    stack: saveError.stack,
-                    name: saveError.name
-                  });
+                    })
+                    .catch(saveError => {
+                      console.error('❌ Error saving canvas state:', saveError);
+                      console.error('❌ Save error details:', {
+                        message: saveError.message,
+                        stack: saveError.stack,
+                        name: saveError.name
+                      });
+                    });
                 }
-              }
+                
+                return updated;
+              });
             } else {
               console.error('❌ No table name found after Tables segment');
             }
@@ -260,7 +297,189 @@ function CanvasOverviewView({
     } finally {
       setIsLoading(false);
     }
-  }, [workloadClient, canvasItems, setCanvasItems, item, onItemUpdate]);
+  }, [workloadClient, localCanvasItems, setCanvasItems, item, onItemUpdate]);
+
+  // 🔧 REFACTORED: Handle Excel creation with proper state management
+  const handleCreateExcel = async (canvasItem: CanvasItem) => {
+    console.log('📝 Creating Excel for canvas item:', canvasItem);
+    
+    // Check if any Excel creation is already in progress
+    const anyCreating = localCanvasItems.some(ci => ci.isCreatingExcel);
+    if (anyCreating) {
+      const { callDialogOpenMsgBox } = await import('../../controller/DialogController');
+      await callDialogOpenMsgBox(
+        workloadClient,
+        'Excel Creation in Progress',
+        'An Excel file is currently being created. Please wait until the current creation is finished before creating another.',
+        ['Ok']
+      );
+      return;
+    }
+    
+    // 🔧 REFACTORED: Use functional setState to avoid stale closure
+    setLocalCanvasItems(currentItems => {
+      const updated = currentItems.map(ci => 
+        ci.id === canvasItem.id ? { ...ci, isCreatingExcel: true } : ci
+      );
+      
+      // Also update parent and persist immediately
+      setCanvasItems(updated);
+      
+      const workflowState = item?.definition?.state as ExcelEditWorkflowState;
+      const tempState: ExcelEditWorkflowState = {
+        ...workflowState,
+        canvasItems: updated
+      };
+      
+      console.log('💾 Saving item definition with isCreatingExcel=true for:', canvasItem.id);
+      saveItemDefinition(workloadClient, item?.id || '', { state: tempState } as ExcelEditItemDefinition)
+        .then(() => console.log('✅ Item definition saved with isCreatingExcel=true'));
+      
+      return updated;
+    });
+    
+    try {
+      // Import required services
+      const { fetchLakehouseTableData } = await import('../../utils/ExcelClientSide');
+      const { OneDriveService } = await import('../../services/OneDriveService');
+      const ExcelJS = await import('exceljs');
+      
+      if (!canvasItem.source?.lakehouse?.id) {
+        throw new Error('No lakehouse metadata found');
+      }
+      
+      // Step 1: Fetch data from Spark
+      console.log('📊 Fetching data from Spark...');
+      const { data, schema } = await fetchLakehouseTableData(
+        workloadClient,
+        canvasItem.source.lakehouse.workspaceId,
+        canvasItem.source.lakehouse.id,
+        canvasItem.name,
+        sparkSessionId
+      );
+      
+      // Step 2: Create Excel blob
+      console.log('📝 Creating Excel workbook...');
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet(canvasItem.displayName);
+      
+      // Add headers
+      const headers = schema.map(col => col.name);
+      worksheet.addRow(headers);
+      
+      // Style header row
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: '0078D4' }
+      };
+      
+      // Add data rows
+      data.forEach(row => worksheet.addRow(row));
+      
+      // Auto-size columns
+      worksheet.columns.forEach((column: any) => {
+        column.width = 15;
+      });
+      
+      // Generate blob
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      
+      // Step 3: Upload to OneDrive
+      console.log('☁️ Uploading to OneDrive...');
+      const oneDriveService = new OneDriveService(workloadClient);
+      const fileName = `${canvasItem.displayName}_${Date.now()}.xlsx`;
+      const uploadResult = await oneDriveService.uploadExcelFile(blob, fileName);
+      
+      console.log('✅ Upload successful:', uploadResult);
+      
+      // 🔧 REFACTORED: Update canvas items with functional setState (no stale closures!)
+      setLocalCanvasItems(currentItems => {
+        const updated = currentItems.map(ci => 
+          ci.id === canvasItem.id
+            ? {
+                ...ci,
+                excelWebUrl: uploadResult.webUrl,
+                excelEmbedUrl: uploadResult.embedUrl || uploadResult.webUrl,
+                excelFileId: uploadResult.fileId,
+                isCreatingExcel: false
+              }
+            : ci
+        );
+        
+        console.log('💾 Updated canvas items after Excel creation:', updated.map(ci => ({ 
+          id: ci.id, 
+          name: ci.name, 
+          hasExcel: !!(ci as any).excelWebUrl 
+        })));
+        
+        // Update parent and persist
+        setCanvasItems(updated);
+        
+        const workflowState = item?.definition?.state as ExcelEditWorkflowState;
+        const updatedState: ExcelEditWorkflowState = {
+          ...workflowState,
+          workflowStep: 'canvas-overview',
+          canvasItems: updated
+        };
+        
+        saveItemDefinition(workloadClient, item?.id || '', { state: updatedState } as ExcelEditItemDefinition)
+          .then(() => console.log('✅ Excel URLs saved to canvas item'));
+        
+        return updated;
+      });
+      
+      // Show success notification
+      await callNotificationOpen(
+        workloadClient,
+        'Excel file created!',
+        `${fileName} created and linked successfully. Click "Open" to view or "Open in Excel Online" for full editing.`,
+        NotificationType.Success,
+        NotificationToastDuration.Long
+      );
+      
+    } catch (error) {
+      console.error('❌ Failed to create Excel:', error);
+      
+      // 🔧 REFACTORED: Clear creating flag with functional setState
+      setLocalCanvasItems(currentItems => {
+        const updated = currentItems.map(ci => 
+          ci.id === canvasItem.id ? { ...ci, isCreatingExcel: false } : ci
+        );
+        
+        // Update parent and persist
+        setCanvasItems(updated);
+        
+        const workflowState = item?.definition?.state as ExcelEditWorkflowState;
+        const errorState: ExcelEditWorkflowState = {
+          ...workflowState,
+          canvasItems: updated
+        };
+        
+        saveItemDefinition(workloadClient, item?.id || '', { state: errorState } as ExcelEditItemDefinition)
+          .then(() => console.log('🧹 Error handler: cleared isCreatingExcel flag for:', canvasItem.id))
+          .catch(saveError => console.error('❌ Failed to save state in error handler:', saveError));
+        
+        return updated;
+      });
+      
+      await callNotificationOpen(
+        workloadClient,
+        'Excel creation failed',
+        error instanceof Error ? error.message : 'Unknown error',
+        NotificationType.Error,
+        NotificationToastDuration.Long
+      );
+    } finally {
+      // 🔧 REFACTORED: No finally block cleanup needed - state is handled in try/catch
+      console.log('🧹 Finally block: Excel creation completed for:', canvasItem.id);
+    }
+  };
 
   // Register the Add Table callback with parent so it can be used in the ribbon
   useEffect(() => {
@@ -299,19 +518,35 @@ function CanvasOverviewView({
     }
   }, [canvasItems, setCanvasItems, item, workloadClient]);
 
-  const handleEditTable = (canvasItem: CanvasItem) => {
+  const handleEditTable = async (canvasItem: CanvasItem) => {
     console.log('Opening table editor for:', canvasItem.name);
+    
+    // Prevent navigation if Excel is being created for this item
+    if (canvasItem.isCreatingExcel) {
+      const { callDialogOpenMsgBox } = await import('../../controller/DialogController');
+      await callDialogOpenMsgBox(
+        workloadClient,
+        'Excel Creation in Progress',
+        'This Excel file is currently being created. Please wait until creation is finished before opening.',
+        ['Ok']
+      );
+      return;
+    }
+    
     console.log('📋 Full canvas item data:', canvasItem);
-    console.log('🔍 Canvas item Excel URLs:', {
+    console.log('🔍 Canvas item Excel URLs and fileId:', {
       hasWebUrl: !!(canvasItem as any).excelWebUrl,
       hasEmbedUrl: !!(canvasItem as any).excelEmbedUrl,
+      hasFileId: !!(canvasItem as any).excelFileId,
       webUrl: (canvasItem as any).excelWebUrl,
-      embedUrl: (canvasItem as any).excelEmbedUrl
+      embedUrl: (canvasItem as any).excelEmbedUrl,
+      fileId: (canvasItem as any).excelFileId
     });
     
     const currentState = item?.definition?.state as ExcelEditWorkflowState || {};
     const updatedState: ExcelEditWorkflowState = {
       ...currentState,
+      canvasItems: localCanvasItems,  // 🔧 REFACTORED: Preserve current local state
       workflowStep: 'table-editing', // 🔧 Set workflow step to enable table editor view
       currentEditingItem: {
         id: canvasItem.id,
@@ -320,9 +555,10 @@ function CanvasOverviewView({
         displayName: canvasItem.displayName,
         // ✅ IMPORTANT: Store full canvas item for Lakehouse data access
         source: canvasItem.source,  // Includes lakehouse {id, name, workspaceId} and table details
-        // ✅ IMPORTANT: Preserve Excel URLs if they exist from previous editing
+        // ✅ IMPORTANT: Preserve Excel URLs and fileId if they exist from previous editing
         excelWebUrl: (canvasItem as any).excelWebUrl,
-        excelEmbedUrl: (canvasItem as any).excelEmbedUrl
+        excelEmbedUrl: (canvasItem as any).excelEmbedUrl,
+        excelFileId: (canvasItem as any).excelFileId  // Include fileId for refresh capability
       } as any // Extended to include source
     };
     
@@ -346,21 +582,22 @@ function CanvasOverviewView({
     if (workflowState?.canvasItems) {
       console.log('📥 Loading canvas items from state:', workflowState.canvasItems);
       workflowState.canvasItems.forEach((ci, index) => {
-        console.log(`   Item ${index}: ${ci.name}, Excel URLs:`, {
+        console.log(`   Item ${index}: ${ci.name}, isCreatingExcel: ${ci.isCreatingExcel}, Excel URLs:`, {
           hasWebUrl: !!(ci as any).excelWebUrl,
           hasEmbedUrl: !!(ci as any).excelEmbedUrl,
           webUrl: (ci as any).excelWebUrl,
           embedUrl: (ci as any).excelEmbedUrl
         });
       });
+      console.log('📥 Setting canvasItems from item definition state...');
       setCanvasItems(workflowState.canvasItems);
     }
   }, [item]);
 
-  console.log('🎨 Rendering canvas with canvasItems:', canvasItems);
+  console.log('🎨 Rendering canvas with localCanvasItems:', localCanvasItems);
   
-  if (canvasItems.length > 0) {
-    console.log('🎨 About to render', canvasItems.length, 'canvas items:', canvasItems);
+  if (localCanvasItems.length > 0) {
+    console.log('🎨 About to render', localCanvasItems.length, 'canvas items:', localCanvasItems);
   }
   
   return (
@@ -377,7 +614,7 @@ function CanvasOverviewView({
         </div>
       )}
 
-      {canvasItems.length === 0 && !isLoading && (
+      {localCanvasItems.length === 0 && !isLoading && (
         <div className="empty-canvas">
           <DatabaseSearch20Regular style={{ fontSize: '48px', color: '#8a8886' }} />
           <Text size={500} weight="semibold">No tables selected</Text>
@@ -385,30 +622,89 @@ function CanvasOverviewView({
         </div>
       )}
 
-      {canvasItems.length > 0 && (
+      {localCanvasItems.length > 0 && (
         <div className="canvas-items-container">
-          {canvasItems.map((canvasItem, index) => {
+          {localCanvasItems.map((canvasItem, index) => {
             console.log(`🔷 Rendering canvas item ${index}:`, canvasItem);
+            const hasExcel = !!(canvasItem as any).excelWebUrl;
+            const isCreating = !!canvasItem.isCreatingExcel; // 🔧 REFACTORED: Single source of truth
+            console.log(`🔷 Item ${canvasItem.id} state:`, {
+              isCreatingExcel: canvasItem.isCreatingExcel,
+              isCreating,
+              hasExcel
+            });
+            
+            const lakehouseName = canvasItem.source.lakehouse?.name === 'Selected Lakehouse'
+              ? 'Unknown (old data - please delete and re-add)'
+              : canvasItem.source.lakehouse?.name || 'Unknown Lakehouse';
+            
             return (
               <div key={canvasItem.id} className="canvas-item-card compact">
                 <div className="canvas-item-header">
                   <div className="canvas-item-info-row">
                     <TableSimple20Regular className="table-icon" />
                     <div className="canvas-item-text">
-                      <Text weight="semibold" size={400}>{canvasItem.displayName}</Text>
+                      <Text weight="semibold" size={500}>{canvasItem.displayName}</Text>
                       <Text size={300} className="canvas-item-source">
-                        {canvasItem.source.lakehouse?.name || 'Unknown Source'}
+                        {`Lakehouse: ${lakehouseName}`}
                       </Text>
                     </div>
                   </div>
                   <div className="canvas-item-actions-row">
-                    <Button
-                      appearance="primary"
-                      size="small"
-                      onClick={() => handleEditTable(canvasItem)}
-                    >
-                      Edit
-                    </Button>
+                    {!hasExcel ? (
+                      <Button
+                        appearance="primary"
+                        size="small"
+                        icon={isCreating ? <Spinner size="tiny" /> : <TableAdd20Regular />}
+                        onClick={() => handleCreateExcel(canvasItem)}
+                        disabled={isCreating}
+                      >
+                        {isCreating ? 'Creating Excel...' : 'Create Excel'}
+                      </Button>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <Button
+                          appearance="primary"
+                          size="small"
+                          onClick={() => handleEditTable(canvasItem)}
+                          disabled={isCreating}
+                          style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
+                        >
+                          {isCreating ? 'Creating...' : 'Open'}
+                        </Button>
+                        <Menu>
+                          <MenuTrigger disableButtonEnhancement>
+                            <Button
+                              appearance="primary"
+                              size="small"
+                              icon={<ChevronDown20Regular />}
+                              disabled={isCreating}
+                              style={{ 
+                                borderTopLeftRadius: 0, 
+                                borderBottomLeftRadius: 0,
+                                borderLeft: '1px solid rgba(255,255,255,0.3)',
+                                minWidth: '32px',
+                                paddingLeft: '8px',
+                                paddingRight: '8px'
+                              }}
+                            />
+                          </MenuTrigger>
+                          <MenuPopover>
+                            <MenuList>
+                              <MenuItem onClick={() => handleEditTable(canvasItem)}>
+                                Open
+                              </MenuItem>
+                              <MenuItem 
+                                icon={<WindowNew24Regular />}
+                                onClick={() => window.open((canvasItem as any).excelWebUrl, '_blank')}
+                              >
+                                Open in Excel Online
+                              </MenuItem>
+                            </MenuList>
+                          </MenuPopover>
+                        </Menu>
+                      </div>
+                    )}
                     <Tooltip content="Remove table" relationship="label">
                       <Button
                         appearance="subtle"
@@ -456,11 +752,13 @@ function TableEditorView({
     console.log('🔍 TableEditorView: Checking for currentEditingItem in state:', workflowState);
     if (workflowState?.currentEditingItem) {
       console.log('✅ TableEditorView: Found currentEditingItem:', workflowState.currentEditingItem);
-      console.log('🔍 Excel URLs check:', {
+      console.log('🔍 Excel URLs and fileId check:', {
         hasWebUrl: !!workflowState.currentEditingItem.excelWebUrl,
         hasEmbedUrl: !!workflowState.currentEditingItem.excelEmbedUrl,
+        hasFileId: !!workflowState.currentEditingItem.excelFileId,
         webUrl: workflowState.currentEditingItem.excelWebUrl,
-        embedUrl: workflowState.currentEditingItem.excelEmbedUrl
+        embedUrl: workflowState.currentEditingItem.excelEmbedUrl,
+        fileId: workflowState.currentEditingItem.excelFileId
       });
       setCurrentEditingItem(workflowState.currentEditingItem);
       

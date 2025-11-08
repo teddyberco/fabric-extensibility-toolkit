@@ -96,6 +96,25 @@ To set things up follow the [Setup Guide](./docs/Project_Setup.md).
 
 ---
 
+## Example Workloads
+
+This toolkit includes example implementations to help you get started:
+
+### 📊 [Excel Table Editor](./docs/Excel-Table-Editor-Workload.md)
+A full-featured workload that enables editing Fabric lakehouse tables using Excel Online. Features include:
+- Multi-table management in a single workload item
+- Excel Online integration via OneDrive for Business
+- Real-time data querying with Spark Livy
+- Token refresh for long editing sessions
+- Professional UI with Fluent UI v9 components
+
+**[→ View full documentation](./docs/Excel-Table-Editor-Workload.md)**
+
+### 👋 HelloWorld Sample
+A basic sample demonstrating the fundamental structure of a Fabric workload. Use this as a starting point for your own custom workloads.
+
+---
+
 ## 📊 Current Development Status (Excel Export Feature)
 
 ### ✅ Completed Work
