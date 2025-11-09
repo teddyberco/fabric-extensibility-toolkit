@@ -13,6 +13,7 @@ import { ExcelEditItemEditorEmpty } from "./ExcelEditItemEditorEmpty";
 import { ExcelEditItemEditorDefault } from "./ExcelEditItemEditorDefault";
 import "../../styles.scss";
 import { ExcelEditItemRibbon } from "./ExcelEditItemRibbon";
+import { SaveToLakehouseDialog } from "../../components/items/ExcelEditItem/SaveToLakehouseDialog";
 
 
 export function ExcelEditItemEditor(props: PageProps) {
@@ -29,6 +30,9 @@ export function ExcelEditItemEditor(props: PageProps) {
   const [excelWebUrl, setExcelWebUrl] = useState<string>(''); // Excel Online URL for ribbon button
   const [addTableCallback, setAddTableCallback] = useState<(() => Promise<void>) | undefined>(undefined);
   const [refreshExcelCallback, setRefreshExcelCallback] = useState<(() => Promise<void>) | undefined>(undefined);
+  const [currentEditingItem, setCurrentEditingItem] = useState<any | null>(null); // Track which canvas item is being edited
+  const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
+  const [saveDialogError, setSaveDialogError] = useState<string | null>(null);
 
   // Wrapper functions to properly set function state (React requires wrapping functions)
   const handleSetAddTableCallback = (callback: (() => Promise<void>) | undefined) => {
@@ -315,14 +319,123 @@ export function ExcelEditItemEditor(props: PageProps) {
 
   // Callback for saving to lakehouse from ribbon
   const handleSaveToLakehouse = async () => {
-    console.log('💾 Saving changes to lakehouse...');
-    callNotificationOpen(
-      workloadClient,
-      'Save to Lakehouse',
-      'This feature is coming soon! Changes will be synced back to your lakehouse table.',
-      undefined,
-      undefined
-    );
+    console.log('💾 Save to Lakehouse button clicked');
+    
+    // Validate we have the necessary context
+    if (!currentEditingItem) {
+      console.error('❌ No current editing item found');
+      await callNotificationOpen(
+        workloadClient,
+        'Unable to Save',
+        'No table is currently being edited.',
+        undefined,
+        undefined
+      );
+      return;
+    }
+
+    if (!currentEditingItem.excelWebUrl) {
+      console.error('❌ No Excel web URL found');
+      await callNotificationOpen(
+        workloadClient,
+        'Unable to Save',
+        'Excel file URL not found. Please try refreshing the page.',
+        undefined,
+        undefined
+      );
+      return;
+    }
+
+    console.log('📋 Current editing item:', {
+      name: currentEditingItem.name,
+      displayName: currentEditingItem.displayName,
+      lakehouse: currentEditingItem.source?.lakehouse?.name
+    });
+
+    // Open the confirmation dialog
+    setIsSaveDialogOpen(true);
+  };
+
+  // Callback when user confirms save in dialog
+  const handleConfirmSaveToLakehouse = async () => {
+    console.log('✅ User confirmed save to lakehouse');
+    setSaveDialogError(null);
+    
+    try {
+      // Import utilities
+      const { extractExcelData, validateSchemaMatch, writeExcelToLakehouse, fetchLakehouseTableData } = await import('../../utils/ExcelClientSide');
+      
+      // Step 1: Extract data from Excel file
+      console.log('📤 Step 1: Extracting data from Excel...');
+      // 🔧 FIX: Use downloadUrl instead of webUrl to avoid CORS issues
+      const excelUrl = currentEditingItem.excelDownloadUrl || currentEditingItem.excelWebUrl;
+      console.log(`   excelDownloadUrl: ${currentEditingItem.excelDownloadUrl}`);
+      console.log(`   excelWebUrl: ${currentEditingItem.excelWebUrl}`);
+      console.log(`   Using URL: ${excelUrl}`);
+      
+      if (!currentEditingItem.excelDownloadUrl) {
+        setSaveDialogError('This Excel was created with an older version. Please delete it and create a new Excel from the table to enable Save to Lakehouse.');
+        return;
+      }
+      
+      const excelData = await extractExcelData(excelUrl);
+      console.log(`✅ Extracted ${excelData.rowCount} rows, ${excelData.columnCount} columns`);
+      
+      // Step 2: Fetch original schema for validation
+      console.log('🔍 Step 2: Fetching original table schema...');
+      const originalData = await fetchLakehouseTableData(
+        workloadClient,
+        currentEditingItem.source.lakehouse.workspaceId,
+        currentEditingItem.source.lakehouse.id,
+        currentEditingItem.name,
+        sparkSessionId
+      );
+      
+      // Step 3: Validate schema matches
+      console.log('✔️ Step 3: Validating schema...');
+      const validation = validateSchemaMatch(excelData.headers, originalData.schema);
+      if (!validation.isValid) {
+        console.error('❌ Schema validation failed:', validation.error);
+        setSaveDialogError(validation.error || 'Schema mismatch');
+        return;
+      }
+      
+      // Step 4: Write to lakehouse
+      console.log('💾 Step 4: Writing to lakehouse...');
+      const writeResult = await writeExcelToLakehouse(
+        workloadClient,
+        currentEditingItem.source.lakehouse.workspaceId,
+        currentEditingItem.source.lakehouse.id,
+        currentEditingItem.name,
+        excelData.headers,
+        excelData.rows,
+        originalData.schema, // Pass original schema to preserve data types
+        sparkSessionId || originalData.sessionId
+      );
+      
+      console.log('✅ Save completed successfully:', writeResult);
+      
+      // Update Spark session ID if changed
+      if (writeResult.sessionId !== sparkSessionId) {
+        setSparkSessionId(writeResult.sessionId);
+      }
+      
+      // Close dialog
+      setIsSaveDialogOpen(false);
+      
+      // Show success notification
+      await callNotificationOpen(
+        workloadClient,
+        'Save Successful',
+        `Successfully saved ${writeResult.rowsWritten} rows to table "${currentEditingItem.displayName}".`,
+        undefined,
+        undefined
+      );
+      
+    } catch (error: any) {
+      console.error('❌ Error saving to lakehouse:', error);
+      setSaveDialogError(error.message || 'An unexpected error occurred');
+    }
   };
 
   // Show loading state
@@ -421,6 +534,24 @@ export function ExcelEditItemEditor(props: PageProps) {
           onRefreshExcelCallbackChange={handleSetRefreshExcelCallback}
           onSparkSessionCreated={setSparkSessionId}
           onSparkSessionStarting={setIsSparkSessionStarting}
+          onCurrentEditingItemChange={setCurrentEditingItem}
+        />
+      )}
+
+      {/* Save to Lakehouse Dialog */}
+      {isSaveDialogOpen && currentEditingItem && (
+        <SaveToLakehouseDialog
+          isOpen={isSaveDialogOpen}
+          onClose={() => {
+            setIsSaveDialogOpen(false);
+            setSaveDialogError(null);
+          }}
+          onConfirm={handleConfirmSaveToLakehouse}
+          tableName={currentEditingItem.displayName || currentEditingItem.name}
+          lakehouseName={currentEditingItem.source?.lakehouse?.name || 'Unknown'}
+          rowCount={0} // Will be populated after Excel extraction
+          columnCount={0} // Will be populated after Excel extraction
+          error={saveDialogError}
         />
       )}
     </Stack>

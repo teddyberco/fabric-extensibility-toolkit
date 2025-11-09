@@ -53,6 +53,7 @@ interface ExcelEditItemEditorDefaultProps {
   onRefreshExcelCallbackChange?: (callback: (() => Promise<void>) | undefined) => void; // Callback to set Refresh Excel handler
   onSparkSessionCreated?: (sessionId: string) => void; // Callback when Spark session is auto-created
   onSparkSessionStarting?: (isStarting: boolean) => void; // Callback to update Spark session starting state
+  onCurrentEditingItemChange?: (item: any) => void; // Callback to update current editing item in parent
 }
 
 export function ExcelEditItemEditorDefault({
@@ -67,7 +68,8 @@ export function ExcelEditItemEditorDefault({
   onItemUpdate,
   onRefreshExcelCallbackChange,
   onSparkSessionCreated,
-  onSparkSessionStarting
+  onSparkSessionStarting,
+  onCurrentEditingItemChange
 }: ExcelEditItemEditorDefaultProps) {
   
   console.log('🎯 ExcelEditItemEditorDefault rendering with currentView:', currentView);
@@ -119,6 +121,7 @@ export function ExcelEditItemEditorDefault({
       onExcelWebUrlChange={onExcelWebUrlChange}
       onCanvasItemsUpdate={setCanvasItems}
       onRefreshExcelCallbackChange={onRefreshExcelCallbackChange}
+      onCurrentEditingItemChange={onCurrentEditingItemChange}
     />;
   }
   
@@ -436,6 +439,7 @@ function CanvasOverviewView({
             ? {
                 ...ci,
                 excelWebUrl: uploadResult.webUrl,
+                excelDownloadUrl: uploadResult.downloadUrl, // 🔧 ADD: Store download URL for direct file access
                 excelEmbedUrl: uploadResult.embedUrl || uploadResult.webUrl,
                 excelFileId: uploadResult.fileId,
                 isCreatingExcel: false
@@ -603,6 +607,7 @@ function CanvasOverviewView({
         source: canvasItem.source,  // Includes lakehouse {id, name, workspaceId} and table details
         // ✅ IMPORTANT: Preserve Excel URLs and fileId if they exist from previous editing
         excelWebUrl: (canvasItem as any).excelWebUrl,
+        excelDownloadUrl: (canvasItem as any).excelDownloadUrl,  // 🔧 ADD: Include download URL for direct file access
         excelEmbedUrl: (canvasItem as any).excelEmbedUrl,
         excelFileId: (canvasItem as any).excelFileId  // Include fileId for refresh capability
       } as any // Extended to include source
@@ -798,7 +803,8 @@ function TableEditorView({
   sparkSessionId,
   onExcelWebUrlChange,
   onCanvasItemsUpdate,
-  onRefreshExcelCallbackChange
+  onRefreshExcelCallbackChange,
+  onCurrentEditingItemChange
 }: {
   workloadClient: WorkloadClientAPI;
   item?: ItemWithDefinition<ExcelEditItemDefinition>;
@@ -807,6 +813,7 @@ function TableEditorView({
   onExcelWebUrlChange?: (url: string) => void;
   onCanvasItemsUpdate?: (items: CanvasItem[]) => void;
   onRefreshExcelCallbackChange?: (callback: (() => Promise<void>) | undefined) => void;
+  onCurrentEditingItemChange?: (item: any) => void;
 }) {
   const [currentEditingItem, setCurrentEditingItem] = useState<any>(null);
   const [excelOnlineUrl, setExcelOnlineUrl] = useState<string>('');
@@ -828,6 +835,11 @@ function TableEditorView({
         fileId: workflowState.currentEditingItem.excelFileId
       });
       setCurrentEditingItem(workflowState.currentEditingItem);
+      
+      // Notify parent about the current editing item
+      if (onCurrentEditingItemChange) {
+        onCurrentEditingItemChange(workflowState.currentEditingItem);
+      }
       
       // Check if we already have a saved Excel URL
       if (workflowState.currentEditingItem.excelWebUrl && workflowState.currentEditingItem.excelEmbedUrl) {

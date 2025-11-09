@@ -24,22 +24,42 @@ The ExcelEdit item provides a complete Fabric-native workflow for editing Lakeho
    - Preview table schema and data types
    - Support for multiple data types (string, decimal, datetime, int)
 
-3. **Excel Editing**
-   - Integration with `@microsoft/connected-workbooks` package
+3. **Excel Creation with Schema Preservation**
+   - Query lakehouse table via Spark Livy API
+   - Extract original schema for type-aware operations
+   - Generate Excel file with real data (up to 1000 rows)
+   - Professional styling with Microsoft blue headers
+
+4. **Excel Editing**
+   - Integration with Excel Online via OneDrive for Business
    - In-Fabric Excel editing capabilities
    - Live data preview and manipulation
    - Professional Excel experience without leaving Fabric
 
-4. **OneLake Storage**
+5. **OneLake Storage**
    - Save edited data to user's OneLake folders
    - Folder browsing and selection
    - Automatic file naming with timestamps
    - Preservation of data formatting
 
+6. **Save to Lakehouse with Type Preservation**
+   - Parse Excel file client-side using ExcelJS
+   - Validate schema compatibility with original table
+   - Convert Excel strings to proper Spark types:
+     - Boolean: `"true"` → `True`, `"false"` → `False`
+     - Integer/Long: `"42"` → `42`
+     - Float/Double: `"3.14"` → `3.14`
+     - Timestamp: `"2023-01-01T00:00:00"` → Python datetime
+     - String: Preserved as-is
+   - Execute SQL INSERT OVERWRITE for Delta Lake compatibility
+   - Preserve Delta Lake transaction history
+
 ### 🔧 **Technical Implementation**
 
 #### Key Components
-- **ExcelEditItemEditorDefault.tsx**: Main workflow component
+- **ExcelEditItemEditorDefault.tsx**: Main workflow component with state management
+- **ExcelClientSide.ts**: Client-side Excel generation and lakehouse write operations
+- **SparkQueryHelper.ts**: Spark Livy session management and query execution
 - **WorkflowState enum**: State management for multi-step process
 - **LakehouseInfo/TableInfo/OneLakeFolder interfaces**: TypeScript type safety
 
@@ -57,10 +77,20 @@ enum WorkflowState {
 ```
 
 #### Data Flow
+
+**Read Path (Lakehouse → Excel):**
 1. **DataHub SDK** → List lakehouses and tables
-2. **Lakehouse API** → Query table data for Excel
-3. **Connected Workbooks** → Enable Excel editing
-4. **OneLake API** → Save edited data back to storage
+2. **Spark Livy API** → Query table data with schema extraction
+3. **SparkQueryHelper** → Execute PySpark code and poll for results
+4. **ExcelClientSide** → Generate Excel file with styled headers
+5. **Excel Online** → Display in embedded iframe for editing
+
+**Write Path (Excel → Lakehouse):**
+1. **Graph API** → Download Excel file using `@microsoft.graph.downloadUrl`
+2. **ExcelJS** → Parse Excel binary data client-side
+3. **Type Conversion** → Convert Excel strings to Spark types
+4. **Spark Livy API** → Create DataFrame with original schema
+5. **SQL INSERT OVERWRITE** → Write to Delta Lake table via temp view
 
 ### 🚀 **Usage Scenario**
 
@@ -73,26 +103,71 @@ enum WorkflowState {
 
 ### 📦 **Dependencies**
 
-- `@microsoft/connected-workbooks`: Excel editing within Fabric
+- `exceljs`: Client-side Excel file parsing and generation
 - `@ms-fabric/workload-client`: Fabric SDK integration
 - `@fluentui/react-components`: UI components
-- DataHub SDK (planned): Lakehouse discovery
-- OneLake SDK (planned): File storage
+- **Fabric REST APIs**:
+  - Lakehouse API: Get lakehouse properties and table lists
+  - Spark Livy API: Session management and query execution
+  - Microsoft Graph API: Excel file downloads and OneDrive integration
+- **DataHub SDK**: Lakehouse discovery
+- **OneLake SDK**: File storage integration
 
 ### 🛠 **Development Notes**
 
 #### Current Implementation
-- Mock data for lakehouse/table discovery
-- Simulated Excel editing placeholder
-- Demonstrative OneLake folder selection
+- ✅ **Real lakehouse data** queried via Spark Livy API
+- ✅ **Schema preservation** from lakehouse to Excel and back
+- ✅ **Type conversion** for Boolean, Long, Double, String, Timestamp, Date types
+- ✅ **Excel Online integration** via OneDrive for Business
+- ✅ **SQL INSERT OVERWRITE** for Delta Lake compatibility
+- ✅ **Client-side Excel processing** - no backend required for parsing
+- ✅ **Error handling** with validation and detailed error messages
 - Progress indicator with workflow steps
 
+#### Technical Details
+
+**Type Conversion Logic:**
+```typescript
+// Boolean: Excel "true"/"false" strings → Python True/False
+if (field.type === 'BooleanType') {
+  convertedValue = value.toLowerCase() === 'true';
+}
+
+// Integer/Long: Excel number strings → Python int
+if (field.type === 'IntegerType' || field.type === 'LongType') {
+  convertedValue = parseInt(value, 10);
+}
+
+// Float/Double: Excel decimal strings → Python float
+if (field.type === 'FloatType' || field.type === 'DoubleType') {
+  convertedValue = parseFloat(value);
+}
+
+// Timestamp: ISO 8601 strings → Python datetime
+if (field.type === 'TimestampType') {
+  convertedValue = `datetime.fromisoformat("${value}")`;
+}
+```
+
+**SQL INSERT OVERWRITE Approach:**
+```python
+# Create DataFrame with original schema
+df = spark.createDataFrame(data, schema)
+
+# Create temporary view for SQL operation
+df.createOrReplaceTempView("temp_insert_view")
+
+# Use INSERT OVERWRITE for Delta Lake compatibility
+spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM temp_insert_view")
+```
+
 #### Production Roadmap
-1. **DataHub SDK Integration**: Replace mock data with real lakehouse discovery
-2. **Connected Workbooks Setup**: Integrate full Excel editing component
-3. **OneLake API Connection**: Implement real file save functionality
-4. **Error Handling**: Add comprehensive error states and recovery
-5. **Performance Optimization**: Lazy loading and data pagination
+1. ✅ **DataHub SDK Integration**: Real lakehouse discovery implemented
+2. ✅ **Excel Online Integration**: Full Excel editing via OneDrive
+3. ✅ **Lakehouse Write**: SQL INSERT OVERWRITE with type preservation
+4. ✅ **Error Handling**: Comprehensive validation and error messages
+5. 🔄 **Performance Optimization**: Consider pagination for tables > 1000 rows
 
 ### 📋 **Configuration**
 

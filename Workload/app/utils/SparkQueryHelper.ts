@@ -211,7 +211,7 @@ export async function executeSparkQuery(
   console.log(`[SparkQueryHelper] Executing query for table: ${tableName} (limit: ${limit})`);
   
   try {
-    // Prepare Python code to query the table and return JSON
+    // Prepare Python code to query the table and return JSON with schema
     const code = `
 import json
 import math
@@ -232,13 +232,25 @@ class DateTimeEncoder(json.JSONEncoder):
 # Query the table with limit
 df = spark.sql("SELECT * FROM ${tableName} LIMIT ${limit}")
 
+# Extract schema information
+schema_info = []
+for field in df.schema.fields:
+    schema_info.append({
+        'name': field.name,
+        'dataType': str(field.dataType)
+    })
+
 # Convert to Pandas and replace NaN with None
 pdf = df.toPandas()
 pdf = pdf.where(pd.notnull(pdf), None)
 result = pdf.to_dict('records')
 
-# Print as JSON with custom encoder (this becomes the statement output)
-print(json.dumps(result, cls=DateTimeEncoder))
+# Print schema and data as JSON
+output = {
+    'schema': schema_info,
+    'data': result
+}
+print(json.dumps(output, cls=DateTimeEncoder))
 `.trim();
     
     // Submit the statement
@@ -265,10 +277,23 @@ print(json.dumps(result, cls=DateTimeEncoder))
     const executionTimeMs = Date.now() - startTime;
     console.log(`[SparkQueryHelper] Query completed in ${executionTimeMs}ms`);
     
-    return {
-      rows: result,
-      executionTimeMs
-    };
+    // Handle both new format (with schema) and legacy format (array only)
+    const resultAny = result as any;
+    if (resultAny && typeof resultAny === 'object' && !Array.isArray(resultAny) && 
+        resultAny.data && resultAny.schema) {
+      // New format: result has schema and data properties
+      return {
+        rows: resultAny.data,
+        schema: resultAny.schema,
+        executionTimeMs
+      };
+    } else {
+      // Legacy format: result is just an array
+      return {
+        rows: result,
+        executionTimeMs
+      };
+    }
   } catch (error: any) {
     console.error('[SparkQueryHelper] Error executing query:', error);
     throw new Error(`Failed to execute query: ${error.message}`);
@@ -312,14 +337,24 @@ async function pollStatementResult(
       if (statement.output?.data?.['text/plain']) {
         try {
           const outputText = statement.output.data['text/plain'];
-          // Remove any non-JSON prefix/suffix (like quotes or newlines)
-          const jsonMatch = outputText.match(/\[[\s\S]*\]/);
-          if (jsonMatch) {
-            const data = JSON.parse(jsonMatch[0]);
-            console.log(`[SparkQueryHelper] Parsed ${data.length} rows`);
+          // Try to parse as JSON object (new format with schema)
+          const jsonObjectMatch = outputText.match(/\{[\s\S]*\}/);
+          if (jsonObjectMatch) {
+            const result = JSON.parse(jsonObjectMatch[0]);
+            if (result.schema && result.data) {
+              console.log(`[SparkQueryHelper] Parsed ${result.data.length} rows with schema information`);
+              return result; // Return both schema and data
+            }
+          }
+          
+          // Fallback: Try to parse as JSON array (legacy format without schema)
+          const jsonArrayMatch = outputText.match(/\[[\s\S]*\]/);
+          if (jsonArrayMatch) {
+            const data = JSON.parse(jsonArrayMatch[0]);
+            console.log(`[SparkQueryHelper] Parsed ${data.length} rows (legacy format)`);
             return data;
           } else {
-            console.warn('[SparkQueryHelper] No JSON array found in output:', outputText);
+            console.warn('[SparkQueryHelper] No JSON found in output:', outputText);
             return [];
           }
         } catch (parseError: any) {

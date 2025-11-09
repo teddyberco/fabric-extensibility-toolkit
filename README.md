@@ -115,35 +115,42 @@ A basic sample demonstrating the fundamental structure of a Fabric workload. Use
 
 ---
 
-## 📊 Current Development Status (Excel Export Feature)
+## 📊 Current Development Status (Bidirectional Excel ↔ Lakehouse)
 
 ### ✅ Completed Work
 
-**Client-Side Excel Generation with Real Data** (NO BACKEND!)
-- ✅ Created `SparkQueryHelper.ts` (265 lines) - Session management and query execution
-- ✅ Updated `ExcelClientSide.ts` (333 lines) - Integrated Spark Livy for real data
-- ✅ Integrated with Spark Livy API for querying lakehouse tables
+**Bidirectional Excel ↔ Lakehouse Integration** (CLIENT-SIDE ONLY!)
+- ✅ Created `SparkQueryHelper.ts` (346 lines) - Session management, query execution, and schema extraction
+- ✅ Updated `ExcelClientSide.ts` (722 lines) - Full bidirectional data flow with type preservation
+- ✅ **Read from Lakehouse**: Query lakehouse tables with Spark Livy
+- ✅ **Write to Lakehouse**: Save Excel changes back with proper data types
+- ✅ **Type Preservation**: Automatic conversion between Excel strings and Spark types
+  - Boolean: `"true"` → `True`, `"false"` → `False`
+  - Integer/Long: `"42"` → `42`
+  - Float/Double: `"3.14"` → `3.14`
+  - Timestamp: `"2023-01-01T00:00:00"` → `datetime(2023, 1, 1, 0, 0, 0)`
+  - String: Preserved as-is
 - ✅ Session management: Reuses existing idle sessions, creates new ones when needed
 - ✅ Query execution: Submit Python/Spark code, poll for results (2-5 seconds typically)
-- ✅ Data parsing: Converts Spark query results (JSON) into Excel rows
+- ✅ Schema extraction: Captures original table schema for type-aware write operations
+- ✅ Data validation: Verifies schema match before writing to lakehouse
+- ✅ INSERT OVERWRITE: Uses SQL INSERT OVERWRITE for Delta Lake compatibility
 - ✅ Integrated with Fabric REST APIs:
   - `GET /v1/workspaces/{id}/lakehouses/{id}` - Lakehouse properties
-  - `GET /v1/workspaces/{id}/lakehouses/{id}/tables` - Table schema
-  - `GET /v1/workspaces/{id}/sqlEndpoints/{id}/connectionString` - SQL connection string
   - Spark Livy API (`/livyApi/versions/2024-07-30/sessions`, `/statements`)
-- ✅ Two-worksheet Excel output:
-  - **Sheet 1**: Table structure with **REAL DATA** from lakehouse (up to 1000 rows)
-  - **Sheet 2**: "📖 How to Get Real Data" with SQL connection instructions
+- ✅ Excel Online integration via OneDrive for Business
 - ✅ Professional styling: Microsoft blue headers, borders, auto-sized columns
-- ✅ Browser download functionality via Blob API
-- ✅ Error handling and fallback schemas
-- ✅ Removed problematic Spark Livy polling code from old implementation
+- ✅ Error handling with detailed error messages and validation
+- ✅ Token refresh for long editing sessions
 
 **UI Integration** (`ExcelEditItemEditorDefault.tsx`)
-- ✅ Updated "⚡ Download Excel with Real Data" button
-- ✅ Loading states: Shows spinner and "⏳ Querying Data via Spark..." during execution
+- ✅ Multi-table canvas management
+- ✅ "Create Excel" button - Generates Excel from lakehouse table
+- ✅ "Save to Lakehouse" button - Writes Excel changes back with type preservation
+- ✅ Loading states: Shows spinner during Spark operations
 - ✅ Error handling with user-friendly alerts
 - ✅ Token acquisition with `Lakehouse.ReadWrite.All` scope
+- ✅ Real-time data preview in Excel Online iframe
 
 ### 🎯 How It Works (No Backend Required!)
 
