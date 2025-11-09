@@ -8,6 +8,7 @@ import { DatahubCompactViewConfig, DatahubCompactViewPageConfig, DatahubHeaderDi
     OnelakeExplorerType, 
     WorkloadClientAPI } from "@ms-fabric/workload-client";
 import { Item } from "../clients/FabricPlatformTypes";
+import { FabricPlatformAPIClient } from "../clients";
 
 export interface ItemAndPath extends Item {
     selectedPath: string;
@@ -50,12 +51,29 @@ export async function callDatahubWizardOpen(
 
     const selectedItem = result.onelakeExplorerResult;
     const { itemObjectId, workspaceObjectId } = selectedItem;
-    //TODO: Update this when the type is available in the result
-    const { displayName, description } = { displayName: "", description: "" };
+    
+    // Fetch the actual item details to get the displayName and description
+    let displayName = "";
+    let description = "";
+    let itemType = "Lakehouse"; // Default to Lakehouse since this is most commonly used with wizard
+    
+    try {
+        const fabricClient = new FabricPlatformAPIClient(workloadClient);
+        const itemDetails = await fabricClient.items.getItem(workspaceObjectId, itemObjectId);
+        if (itemDetails) {
+            displayName = itemDetails.displayName || "";
+            description = itemDetails.description || "";
+            itemType = itemDetails.type || "Lakehouse";
+        }
+    } catch (error) {
+        console.warn('⚠️ Could not fetch item details from Fabric API:', error);
+        console.warn('⚠️ Using empty displayName - this will cause issues with lakehouse identification');
+    }
+    
     return {
         id: itemObjectId,
         workspaceId: workspaceObjectId,
-        type: "TODO", // selectedItem.datahubItemUI.itemType, // TODO: Update this when the type is available in the result
+        type: itemType,
         displayName,
         description,
         selectedPath: selectedItem.selectedPath.split('/').slice(2).join('/') // Remove the first two segments (workspace and item)
