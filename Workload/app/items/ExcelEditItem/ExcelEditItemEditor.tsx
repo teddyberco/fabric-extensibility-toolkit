@@ -4,7 +4,7 @@ import { Stack } from "@fluentui/react";
 import { Button } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import { PageProps, ContextProps } from "../../App";
-import { ItemWithDefinition, getWorkloadItem, callGetItem, saveItemDefinition, callGetItemDefinition, convertGetItemResultToWorkloadItem } from "../../controller/ItemCRUDController";
+import { ItemWithDefinition, getWorkloadItem, callGetItem, callGetItemDefinition, convertGetItemResultToWorkloadItem } from "../../controller/ItemCRUDController";
 import { callOpenSettings } from "../../controller/SettingsController";
 import { callNotificationOpen } from "../../controller/NotificationController";
 import { ItemEditorLoadingProgressBar } from "../../controls/ItemEditorLoadingProgressBar";
@@ -24,7 +24,6 @@ export function ExcelEditItemEditor(props: PageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [item, setItem] = useState<ItemWithDefinition<ExcelEditItemDefinition>>();
   const [currentView, setCurrentView] = useState<CurrentView>(VIEW_TYPES.EMPTY);
-  const [hasBeenSaved, setHasBeenSaved] = useState<boolean>(false);
   const [sparkSessionId, setSparkSessionId] = useState<string | null>(null);
   const [isSparkSessionStarting, setIsSparkSessionStarting] = useState(false);
   const [excelWebUrl, setExcelWebUrl] = useState<string>(''); // Excel Online URL for ribbon button
@@ -91,10 +90,6 @@ export function ExcelEditItemEditor(props: PageProps) {
   }
 
   useEffect(() => {
-    setHasBeenSaved(false);
-  }, [currentView, item?.id]);
-
-  useEffect(() => {
     loadDataFromUrl(pageContext, pathname);
   }, [pageContext, pathname]);
 
@@ -102,8 +97,11 @@ export function ExcelEditItemEditor(props: PageProps) {
   useEffect(() => {
     console.log('🔄 useEffect: Determining view based on item state:', item?.definition?.state);
     
-    if (!item?.definition?.state) {
-      console.log('📍 useEffect: No state - showing empty view');
+    const workflowState = item?.definition?.state as ExcelEditWorkflowState;
+    
+    // Check if state is invalid or has no canvas items
+    if (!isWorkflowStateValid(workflowState)) {
+      console.log('📍 useEffect: No valid state or empty canvas - showing empty view');
       setCurrentView(VIEW_TYPES.EMPTY);
       return;
     }
@@ -327,49 +325,6 @@ export function ExcelEditItemEditor(props: PageProps) {
     );
   };
 
-  async function SaveItem() {
-    if (!item?.definition?.state) {
-      console.error('❌ No item state to save');
-      return;
-    }
-
-    var successResult = await saveItemDefinition<ExcelEditItemDefinition>(
-      workloadClient,
-      item.id,
-      item.definition
-    );
-    const wasSaved = Boolean(successResult);
-    setHasBeenSaved(wasSaved);
-    callNotificationOpen(
-      props.workloadClient,
-      t("ItemEditor_Saved_Notification_Title"),
-      t("ItemEditor_Saved_Notification_Text", { itemName: item.displayName }),
-      undefined,
-      undefined
-    );
-  }
-
-  const isSaveEnabled = () => {
-    if (currentView === VIEW_TYPES.EMPTY) {
-      return false;
-    }
-
-    if (currentView === VIEW_TYPES.CANVAS_OVERVIEW || currentView === VIEW_TYPES.TABLE_EDITOR) {
-      if (hasBeenSaved) {
-        return false;
-      }
-
-      if (!item?.definition?.state) {
-        return true;
-      }
-
-      return false;
-    }
-
-    return false;
-  };
-
-
   // Show loading state
   if (isLoading) {
     return (
@@ -423,9 +378,7 @@ export function ExcelEditItemEditor(props: PageProps) {
       
       <ExcelEditItemRibbon
         {...props}
-        isSaveButtonEnabled={isSaveEnabled()}
         currentView={currentView}
-        saveItemCallback={SaveItem}
         openSettingsCallback={handleOpenSettings}
         navigateToCanvasOverviewCallback={navigateToCanvasOverview}
         startSparkSessionCallback={handleStartSparkSession}
@@ -454,6 +407,8 @@ export function ExcelEditItemEditor(props: PageProps) {
           sparkSessionId={sparkSessionId}
           onAddTableCallbackChange={handleSetAddTableCallback}
           onItemUpdate={setItem}
+          onSparkSessionCreated={setSparkSessionId}
+          onSparkSessionStarting={setIsSparkSessionStarting}
         />
       ) : (
         <ExcelEditItemEditorDefault
@@ -464,6 +419,8 @@ export function ExcelEditItemEditor(props: PageProps) {
           sparkSessionId={sparkSessionId}
           onExcelWebUrlChange={setExcelWebUrl}
           onRefreshExcelCallbackChange={handleSetRefreshExcelCallback}
+          onSparkSessionCreated={setSparkSessionId}
+          onSparkSessionStarting={setIsSparkSessionStarting}
         />
       )}
     </Stack>

@@ -1463,6 +1463,7 @@
   padding: 24px;
   margin: 0;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  position: relative; /* Required for loading overlay positioning */
 }
 
 .canvas-header {
@@ -1478,30 +1479,115 @@
   align-items: center;
 }
 
-.loading-section {
+// Loading overlay (replaces loading-section with overlay approach)
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.95);
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  padding: 40px;
-  color: #666;
-}
-
-.empty-canvas {
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 20px;
-  color: #8a8886;
-  text-align: center;
-  min-height: 300px;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
 }
 
-.empty-canvas > * {
-  margin-bottom: 12px;
+.loading-overlay-content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 0px;
+  gap: 8px;
+  
+  // Spinner styling
+  .fui-Spinner {
+    width: 44px;
+    height: 44px;
+  }
+  
+  // Text label styling
+  span {
+    font-family: 'Segoe UI';
+    font-style: normal;
+    font-weight: 600;
+    font-size: 20px;
+    line-height: 28px;
+    color: #242424;
+  }
 }
 
-.empty-canvas > *:last-child {
-  margin-bottom: 0;
+/* Empty state - Following Fabric design guidelines
+   https://www.figma.com/file/aFHbqQlX8fetFhyYl6STb/Horizon-Framework-Guidance
+*/
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  padding: 40px 20px;
+}
+
+// Empty state overlay - for canvas view when no tables exist
+.empty-state-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  z-index: 10;
+  
+  .empty-state-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+    padding: 40px 20px;
+  }
+  
+  .empty-state-image-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  .empty-state-image {
+    width: 200px;
+    height: 200px;
+  }
+  
+  .empty-state-text-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+  }
+  
+  .empty-state-header {
+    h2 {
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 28px;
+      color: #242424;
+      margin: 0 0 8px 0;
+    }
+  }
+  
+  .empty-state-description {
+    color: #605E5C;
+    font-size: 14px;
+    line-height: 20px;
+    max-width: 400px;
+  }
+  
+  .empty-state-action {
+    display: flex;
+    justify-content: center;
+  }
 }

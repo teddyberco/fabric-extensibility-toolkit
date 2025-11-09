@@ -250,7 +250,7 @@ export async function fetchLakehouseTableData(
   lakehouseId: string,
   tableName: string,
   existingSessionId?: string | null
-): Promise<{ data: any[][]; schema: TableSchema[] }> {
+): Promise<{ data: any[][]; schema: TableSchema[]; sessionId: string }> {
   console.log('📊 Fetching table data from Lakehouse using Spark Livy...');
   
   try {
@@ -291,7 +291,7 @@ export async function fetchLakehouseTableData(
     
     console.log(`✅ Data fetched: ${schema.length} columns, ${data.length} rows`);
     
-    return { data, schema };
+    return { data, schema, sessionId: session.id };
   } catch (error: any) {
     console.error('❌ Error fetching table data:', error);
     throw error;

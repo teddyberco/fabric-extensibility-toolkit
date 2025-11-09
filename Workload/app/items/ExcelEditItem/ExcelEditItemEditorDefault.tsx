@@ -11,7 +11,6 @@ import {
   MenuItem,
 } from "@fluentui/react-components";
 import {
-  DatabaseSearch20Regular,
   TableSimple20Regular,
   Delete20Regular,
   TableAdd20Regular,
@@ -52,6 +51,8 @@ interface ExcelEditItemEditorDefaultProps {
   onAddTableCallbackChange?: (callback: (() => Promise<void>) | undefined) => void; // Callback to set Add Table handler
   onItemUpdate?: (updatedItem: ItemWithDefinition<ExcelEditItemDefinition>) => void; // Callback to update item in parent
   onRefreshExcelCallbackChange?: (callback: (() => Promise<void>) | undefined) => void; // Callback to set Refresh Excel handler
+  onSparkSessionCreated?: (sessionId: string) => void; // Callback when Spark session is auto-created
+  onSparkSessionStarting?: (isStarting: boolean) => void; // Callback to update Spark session starting state
 }
 
 export function ExcelEditItemEditorDefault({
@@ -64,7 +65,9 @@ export function ExcelEditItemEditorDefault({
   onExcelWebUrlChange,
   onAddTableCallbackChange,
   onItemUpdate,
-  onRefreshExcelCallbackChange
+  onRefreshExcelCallbackChange,
+  onSparkSessionCreated,
+  onSparkSessionStarting
 }: ExcelEditItemEditorDefaultProps) {
   
   console.log('🎯 ExcelEditItemEditorDefault rendering with currentView:', currentView);
@@ -103,6 +106,8 @@ export function ExcelEditItemEditorDefault({
       onAddTableCallbackChange={onAddTableCallbackChange}
       onItemUpdate={onItemUpdate}
       sparkSessionId={sparkSessionId}
+      onSparkSessionCreated={onSparkSessionCreated}
+      onSparkSessionStarting={onSparkSessionStarting}
     />;
   } else if (currentView === VIEW_TYPES.TABLE_EDITOR) {
     console.log('📊 Rendering TableEditorView');
@@ -129,7 +134,9 @@ function CanvasOverviewView({
   setCanvasItems,
   onAddTableCallbackChange,
   onItemUpdate,
-  sparkSessionId
+  sparkSessionId,
+  onSparkSessionCreated,
+  onSparkSessionStarting
 }: {
   workloadClient: WorkloadClientAPI;
   item?: ItemWithDefinition<ExcelEditItemDefinition>;
@@ -139,6 +146,8 @@ function CanvasOverviewView({
   onAddTableCallbackChange?: (callback: (() => Promise<void>) | undefined) => void;
   onItemUpdate?: (updatedItem: ItemWithDefinition<ExcelEditItemDefinition>) => void;
   sparkSessionId?: string | null;
+  onSparkSessionCreated?: (sessionId: string) => void;
+  onSparkSessionStarting?: (isStarting: boolean) => void;
 }) {
   const [isLoading, setIsLoading] = useState(false);
   
@@ -300,7 +309,7 @@ function CanvasOverviewView({
   }, [workloadClient, localCanvasItems, setCanvasItems, item, onItemUpdate]);
 
   // 🔧 REFACTORED: Handle Excel creation with proper state management
-  const handleCreateExcel = async (canvasItem: CanvasItem) => {
+  const handleCreateExcel = React.useCallback(async (canvasItem: CanvasItem) => {
     console.log('📝 Creating Excel for canvas item:', canvasItem);
     
     // Check if any Excel creation is already in progress
@@ -348,15 +357,37 @@ function CanvasOverviewView({
         throw new Error('No lakehouse metadata found');
       }
       
-      // Step 1: Fetch data from Spark
+      // Step 1: Fetch data from Spark (auto-creates session if needed)
       console.log('📊 Fetching data from Spark...');
-      const { data, schema } = await fetchLakehouseTableData(
+      
+      // If no existing Spark session, notify parent that we're starting one
+      if (!sparkSessionId && onSparkSessionStarting) {
+        console.log('🚀 Will auto-create Spark session - updating button state to "Connecting"');
+        onSparkSessionStarting(true);
+      } else {
+        console.log(`♻️ Using existing Spark session: ${sparkSessionId}`);
+      }
+      
+      const { data, schema, sessionId } = await fetchLakehouseTableData(
         workloadClient,
         canvasItem.source.lakehouse.workspaceId,
         canvasItem.source.lakehouse.id,
         canvasItem.name,
         sparkSessionId
       );
+      
+      console.log(`✅ Data fetched using Spark session: ${sessionId}`);
+      
+      // Update parent with the session ID (if newly created)
+      if (sessionId && sessionId !== sparkSessionId && onSparkSessionCreated) {
+        console.log('✅ Spark session created - updating parent state');
+        onSparkSessionCreated(sessionId);
+      }
+      
+      // Stop the "starting" state
+      if (onSparkSessionStarting) {
+        onSparkSessionStarting(false);
+      }
       
       // Step 2: Create Excel blob
       console.log('📝 Creating Excel workbook...');
@@ -479,7 +510,7 @@ function CanvasOverviewView({
       // 🔧 REFACTORED: No finally block cleanup needed - state is handled in try/catch
       console.log('🧹 Finally block: Excel creation completed for:', canvasItem.id);
     }
-  };
+  }, [localCanvasItems, workloadClient, item, setLocalCanvasItems, setCanvasItems, sparkSessionId, onSparkSessionCreated, onSparkSessionStarting]);
 
   // Register the Add Table callback with parent so it can be used in the ribbon
   useEffect(() => {
@@ -512,11 +543,26 @@ function CanvasOverviewView({
       try {
         await saveItemDefinition(workloadClient, item.id, { state: updatedState } as ExcelEditItemDefinition);
         console.log('✅ Table removed from canvas successfully!');
+        
+        // If all tables are removed, notify parent to return to empty view
+        if (updatedCanvasItems.length === 0) {
+          console.log('📍 All tables removed, updating parent item to trigger empty state');
+          if (onItemUpdate) {
+            const updatedItem: ItemWithDefinition<ExcelEditItemDefinition> = {
+              ...item,
+              definition: {
+                ...item.definition,
+                state: updatedState
+              }
+            };
+            onItemUpdate(updatedItem);
+          }
+        }
       } catch (error) {
         console.error('❌ Error saving canvas state after delete:', error);
       }
     }
-  }, [canvasItems, setCanvasItems, item, workloadClient]);
+  }, [canvasItems, setCanvasItems, item, workloadClient, onItemUpdate]);
 
   const handleEditTable = async (canvasItem: CanvasItem) => {
     console.log('Opening table editor for:', canvasItem.name);
@@ -602,28 +648,50 @@ function CanvasOverviewView({
   
   return (
     <div className="excel-canvas">
-      <div className="canvas-header">
-        <Text size={600} weight="bold">Excel Linked Tables</Text>
-        <Text size={400}>Select tables and files to edit with Excel</Text>
-      </div>
+      {localCanvasItems.length > 0 && (
+        <div className="canvas-header">
+          <Text size={600} weight="bold">Excel Linked Tables</Text>
+          <Text size={400}>Select tables and files to edit with Excel</Text>
+        </div>
+      )}
 
       {isLoading && (
-        <div className="loading-section">
-          <Spinner size="medium" />
-          <Text>Loading...</Text>
+        <div className="loading-overlay">
+          <div className="loading-overlay-content">
+            <Spinner size="huge" />
+            <Text size={500} weight="semibold">Loading...</Text>
+          </div>
         </div>
       )}
 
       {localCanvasItems.length === 0 && !isLoading && (
-        <div className="empty-canvas">
-          <DatabaseSearch20Regular style={{ fontSize: '48px', color: '#8a8886' }} />
-          <Text size={500} weight="semibold">No tables selected</Text>
-          <Text size={400}>Click "Add Table" to start building your Excel editing workflow</Text>
+        <div className="empty-state-overlay">
+          <div className="empty-state-content">
+            <div className="empty-state-image-container">
+              <img
+                src="/assets/items/HelloWorldItem/EditorEmpty.svg"
+                alt="Empty state illustration"
+                className="empty-state-image"
+              />
+            </div>
+            <div className="empty-state-text-container">
+              <div className="empty-state-header">
+                <h2>No tables selected</h2>
+                <Text className="empty-state-description">
+                  Select tables from your lakehouse to edit with Excel Online
+                </Text>
+              </div>
+            </div>
+            <div className="empty-state-action">
+              <Button appearance="primary" onClick={handleAddTable}>
+                Add Table
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
-      {localCanvasItems.length > 0 && (
-        <div className="canvas-items-container">
+      <div className="canvas-items-container">
           {localCanvasItems.map((canvasItem, index) => {
             console.log(`🔷 Rendering canvas item ${index}:`, canvasItem);
             const hasExcel = !!(canvasItem as any).excelWebUrl;
@@ -718,8 +786,7 @@ function CanvasOverviewView({
               </div>
             );
           })}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

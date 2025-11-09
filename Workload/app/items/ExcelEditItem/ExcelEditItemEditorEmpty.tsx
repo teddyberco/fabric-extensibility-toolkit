@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Button, Text } from "@fluentui/react-components";
-import { CloudDatabase20Regular, DatabaseSearch20Regular } from "@fluentui/react-icons";
 import { callDatahubWizardOpen } from "../../controller/DataHubController";
 
 import { WorkloadClientAPI } from "@ms-fabric/workload-client";
@@ -199,35 +198,29 @@ export function ExcelEditItemEditorEmpty({
   return (
     <div className="empty-state-container">
       <div className="empty-state-content">
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <CloudDatabase20Regular style={{ fontSize: '4rem', color: '#0078d4', marginBottom: '1rem' }} />
-          <Text size={600} weight="semibold" block style={{ marginBottom: '0.5rem' }}>
-            Excel Table Editor
-          </Text>
-          <Text size={400} block style={{ color: '#605e5c', marginBottom: '2rem' }}>
-            Select a table to edit with Excel Online
-          </Text>
+        <div className="empty-state-image-container">
+          <img
+            src="/assets/items/HelloWorldItem/EditorEmpty.svg"
+            alt="Empty state illustration"
+            className="empty-state-image"
+          />
         </div>
-
-        <div style={{ maxWidth: '300px', margin: '0 auto' }}>
+        <div className="empty-state-text-container">
+          <div className="empty-state-header">
+            <h2>Excel Table Editor</h2>
+            <Text className="empty-state-description">
+              Select a table to edit with Excel Online
+            </Text>
+          </div>
+        </div>
+        <div className="empty-state-action">
           <Button 
-            appearance="primary" 
-            icon={<DatabaseSearch20Regular />}
+            appearance="primary"
             onClick={loadLakehouses}
             disabled={isLoading}
-            size="large"
-            style={{ width: '100%' }}
           >
-            {isLoading ? 'Opening OneLake Catalog...' : 'Open Table'}
+            {isLoading ? 'Opening OneLake Catalog...' : 'Add Table'}
           </Button>
-          
-          {isLoading && (
-            <div style={{ marginTop: '1rem', textAlign: 'center' }}>
-              <Text size={300} style={{ color: '#666' }}>
-                Opening OneLake catalog experience...
-              </Text>
-            </div>
-          )}
         </div>
       </div>
     </div>
