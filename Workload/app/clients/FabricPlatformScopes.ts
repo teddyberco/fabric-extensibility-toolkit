@@ -4,13 +4,15 @@
  */
 
 // Base Fabric API scopes
+// These scopes follow the pattern: https://api.fabric.microsoft.com/{Permission}
+// As documented in: https://learn.microsoft.com/en-us/fabric/extensibility-toolkit/how-to-acquire-entra-token
 export const FABRIC_BASE_SCOPES = {
-  // Item operations
+  // Item operations - specific permission scopes for user delegation
   ITEM_READ: "https://api.fabric.microsoft.com/Item.Read.All",
   ITEM_READWRITE: "https://api.fabric.microsoft.com/Item.ReadWrite.All",
   ITEM_EXECUTE: "https://api.fabric.microsoft.com/Item.Execute.All",
   
-  // Workspace operations
+  // Workspace operations  
   WORKSPACE_READ: "https://api.fabric.microsoft.com/Workspace.Read.All",
   WORKSPACE_READWRITE: "https://api.fabric.microsoft.com/Workspace.ReadWrite.All",
   
@@ -73,16 +75,10 @@ export const SCOPES = {
   ].join(" "),
   
   // Item Client - focused on item management
-  ITEM: [
-    FABRIC_BASE_SCOPES.ITEM_READWRITE,
-    FABRIC_BASE_SCOPES.WORKSPACE_READ
-  ].join(" "),
+  ITEM: FABRIC_BASE_SCOPES.ITEM_READWRITE,
   
   // Item Client - read-only operations
-  ITEM_READ: [
-    FABRIC_BASE_SCOPES.ITEM_READ,
-    FABRIC_BASE_SCOPES.WORKSPACE_READ
-  ].join(" "),
+  ITEM_READ: FABRIC_BASE_SCOPES.ITEM_READ,
   
   // Workspace Client - focused on workspace management
   WORKSPACE: [

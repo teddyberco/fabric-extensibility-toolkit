@@ -9,6 +9,7 @@ import CustomAbout from "./items/HelloWorldItem/HelloWorldItemEditorAboutPage";
 import { SamplePage, ClientSDKPlayground } from "./playground/ClientSDKPlayground/ClientSDKPlayground";
 import { DataPlayground } from "./playground/DataPlayground/DataPlayground";
 import { HelloWorldItemEditor} from "./items/HelloWorldItem/HelloWorldItemEditor";
+import { WorkspaceManagerItemEditor } from "./items/WorkspaceManagerItem/WorkspaceManagerItemEditor";
 
 /*
     Add your Item Editor in the Route section of the App function below
@@ -52,6 +53,12 @@ export function App({ history, workloadClient }: AppProps) {
             <Route path="/HelloWorldItem-editor/:itemObjectId">
                 <HelloWorldItemEditor
                     workloadClient={workloadClient} data-testid="HelloWorldItem-editor" />
+            </Route>
+            
+            {/* Routings for the Workspace Manager Item Editor */}
+            <Route path="/WorkspaceManagerItem-editor/:itemObjectId">
+                <WorkspaceManagerItemEditor
+                    workloadClient={workloadClient} data-testid="WorkspaceManagerItem-editor" />
             </Route>
             
             <Route path="/HelloWorldItem-settings-page/:itemObjectId">

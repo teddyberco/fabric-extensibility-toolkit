@@ -19,6 +19,14 @@
     "HelloWorldItemEditor_Definition_Message_Label": "Item Definition",
     "HelloWorldItemEditor_LoadingProgressBar_Text": "Loading Hello World item ...",
     "HelloWorldItemEditorEmpty_Message": "Let's say hello to {{itemName}}!",
-    "HelloWorldItemEditorEmpty_Button": "Save item"
+    "HelloWorldItemEditorEmpty_Button": "Save item",
+    "WorkspaceManagerItemEditor_Title": "Workspace Manager",
+    "WorkspaceManagerItemEditor_LoadingProgressBar_Text": "Loading Workspace Manager...",
+    "WorkspaceManagerItemEditorEmpty_Message": "Welcome to {{itemName}}! This tool helps you manage multiple items within your workspace. You can copy items to other workspaces, delete multiple items at once, and organize your workspace content efficiently.",
+    "WorkspaceManagerItemEditorEmpty_Button": "Initialize Workspace Manager",
+    "WorkspaceManagerItem_LastSync_Label": "Last Synchronized",
+    "WorkspaceManagerItem_Ribbon_Refresh_Label": "Refresh Items",
+    "WorkspaceManagerItem_Ribbon_BulkCopy_Label": "Copy Selected",
+    "WorkspaceManagerItem_Ribbon_BulkDelete_Label": "Delete Selected"
 }
   
