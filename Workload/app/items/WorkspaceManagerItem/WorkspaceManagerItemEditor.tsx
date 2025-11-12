@@ -13,7 +13,8 @@ import {
   DialogActions,
   DialogContent,
   Dropdown,
-  Option
+  Option,
+  Spinner
 } from "@fluentui/react-components";
 import React, { useEffect, useState, useCallback } from "react";
 import { ContextProps, PageProps } from "../../App";
@@ -22,7 +23,6 @@ import { callGetItem, getWorkloadItem, saveItemDefinition } from "../../controll
 import { ItemWithDefinition } from "../../controller/ItemCRUDController";
 import { useLocation, useParams } from "react-router-dom";
 import "../../styles.scss";
-import { useTranslation } from "react-i18next";
 import { WorkspaceManagerItemDefinition, WorkspaceItem, WorkspaceOperation, VIEW_TYPES, CurrentView } from "./WorkspaceManagerItemModel";
 import { WorkspaceManagerItemEmpty } from "./WorkspaceManagerItemEditorEmpty";
 import { ItemEditorLoadingProgressBar } from "../../controls/ItemEditorLoadingProgressBar";
@@ -35,7 +35,6 @@ import { ResizableTable } from "./ResizableTable";
 export function WorkspaceManagerItemEditor(props: PageProps) {
   const pageContext = useParams<ContextProps>();
   const { pathname } = useLocation();
-  const { t } = useTranslation();
   const { workloadClient } = props;
   const [isUnsaved, setIsUnsaved] = useState<boolean>(true);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
@@ -49,6 +48,10 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
   const [reportToRebind, setReportToRebind] = useState<WorkspaceItem | null>(null);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>('');
   const [semanticModels, setSemanticModels] = useState<WorkspaceItem[]>([]);
+  const [showCloneProgressDialog, setShowCloneProgressDialog] = useState<boolean>(false);
+  const [cloneProgressLogs, setCloneProgressLogs] = useState<string[]>([]);
+  const [showOperationLogsDialog, setShowOperationLogsDialog] = useState<boolean>(false);
+  const [selectedOperation, setSelectedOperation] = useState<WorkspaceOperation | null>(null);
 
   // Helper function to update item definition immutably
   const updateItemDefinition = useCallback((updates: Partial<WorkspaceManagerItemDefinition>) => {
@@ -78,8 +81,8 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
     setIsUnsaved(!successResult);
     callNotificationOpen(
             workloadClient,
-            t("ItemEditor_Saved_Notification_Title"),
-            t("ItemEditor_Saved_Notification_Text", { itemName: editorItem.displayName }),
+            "Item Saved",
+            `${editorItem.displayName} has been saved successfully.`,
             undefined,
             undefined
         );
@@ -382,6 +385,445 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
     setShowRebindDialog(true);
   }
 
+  async function handleCloneSemanticModel() {
+    // Get the first selected semantic model
+    const selectedSemanticModel = workspaceItems.find(item => item.selected && item.type === 'SemanticModel');
+    
+    if (!selectedSemanticModel) {
+      callNotificationOpen(
+        workloadClient,
+        "No Semantic Model Selected",
+        "Please select a semantic model to clone. Only one semantic model can be cloned at a time.",
+        undefined,
+        undefined
+      );
+      return;
+    }
+
+    const clonedName = `${selectedSemanticModel.displayName} (Copy)`;
+    
+    // Capture operation start time
+    const operationStartTime = new Date();
+    const operationId = `op-${Date.now()}`;
+    
+    // Initialize progress dialog
+    setCloneProgressLogs([]);
+    setShowCloneProgressDialog(true);
+
+    const addLog = (message: string) => {
+      setCloneProgressLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+    };
+
+    try {
+      addLog("🚀 Starting semantic model clone operation...");
+      addLog(`📋 Operation ID: ${operationId}`);
+      addLog(`📋 Started at: ${operationStartTime.toLocaleString()}`);
+      addLog(`📋 Source: ${selectedSemanticModel.displayName}`);
+      addLog(`📋 Target: ${clonedName}`);
+
+      // Step 1: Get token with Item.ReadWrite.All scope
+      const scopes = "https://api.fabric.microsoft.com/Item.ReadWrite.All";
+      addLog("🔐 Acquiring authentication token...");
+      console.log("Requesting token for clone operation:", scopes);
+      const accessToken = await callAcquireFrontendAccessToken(workloadClient, scopes);
+      console.log("Token acquired successfully");
+      addLog("✅ Authentication successful");
+
+      // Step 2: Get the source semantic model metadata to understand what we're cloning
+      addLog("📊 Fetching source model metadata...");
+      console.log("Getting item metadata for semantic model:", selectedSemanticModel.id);
+      const getItemUrl = `${EnvironmentConstants.FabricApiBaseUrl}/v1/workspaces/${editorItem.workspaceId}/items/${selectedSemanticModel.id}`;
+      
+      const getItemResponse = await fetch(getItemUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer ' + accessToken.token
+        }
+      });
+
+      if (!getItemResponse.ok) {
+        const errorText = await getItemResponse.text();
+        throw new Error(`Failed to get item metadata: ${getItemResponse.status} ${getItemResponse.statusText} - ${errorText}`);
+      }
+
+      const itemMetadata = await getItemResponse.json();
+      console.log("📊 Semantic model metadata:", {
+        id: itemMetadata.id,
+        displayName: itemMetadata.displayName,
+        type: itemMetadata.type,
+        description: itemMetadata.description,
+        workspaceId: itemMetadata.workspaceId
+      });
+      addLog("✅ Source model metadata retrieved");
+
+      // Step 3: Get the source semantic model definition using Core Items API (asynchronous operation)
+      addLog("📥 Requesting model definition (this may take a few seconds)...");
+      console.log("🔄 Starting asynchronous getDefinition for semantic model:", selectedSemanticModel.id);
+      const getDefUrl = `${EnvironmentConstants.FabricApiBaseUrl}/v1/workspaces/${editorItem.workspaceId}/items/${selectedSemanticModel.id}/getDefinition`;
+      
+      const getDefResponse = await fetch(getDefUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + accessToken.token
+        }
+      });
+
+      console.log("📡 getDefinition response status:", getDefResponse.status, getDefResponse.statusText);
+
+      let definitionData = null;
+
+      // 202 Accepted means the operation is asynchronous - need to poll for completion
+      if (getDefResponse.status === 202) {
+        const operationLocation = getDefResponse.headers.get('location') || getDefResponse.headers.get('x-ms-operation-location');
+        console.log("⏳ Operation is asynchronous. Location header:", operationLocation);
+
+        if (!operationLocation) {
+          throw new Error("Received 202 Accepted but no operation location header was provided");
+        }
+
+        // Poll the operation until it completes
+        addLog("⏳ Waiting for definition extraction to complete...");
+        console.log("⏳ Polling for operation completion...");
+        let attempts = 0;
+        const maxAttempts = 30; // 30 attempts with 2s delay = 1 minute max
+
+        while (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between polls
+          attempts++;
+
+          const pollResponse = await fetch(operationLocation, {
+            method: 'GET',
+            headers: {
+              'Authorization': 'Bearer ' + accessToken.token
+            }
+          });
+
+          console.log(`🔍 Poll attempt ${attempts}: Status ${pollResponse.status}`);
+
+          if (pollResponse.status === 200) {
+            // Operation completed - check the status
+            const operationStatus = await pollResponse.json();
+            console.log("✅ Operation completed with status:", operationStatus);
+
+            // Check if operation succeeded
+            if (operationStatus.status === 'Succeeded') {
+              // Operation succeeded - get the result from the Location header
+              // The poll response includes a Location header pointing to the result URL
+              const resultLocation = pollResponse.headers.get('location');
+              
+              if (resultLocation) {
+                console.log("� Fetching definition result from Location header:", resultLocation);
+                
+                const resultResponse = await fetch(resultLocation, {
+                  method: 'GET',
+                  headers: {
+                    'Authorization': 'Bearer ' + accessToken.token
+                  }
+                });
+
+                console.log(`📡 GET result response status:`, resultResponse.status);
+
+                if (resultResponse.ok) {
+                  definitionData = await resultResponse.json();
+                  console.log("✅ Definition result retrieved successfully");
+                  console.log("📦 Definition structure:", definitionData);
+                  const partsCount = definitionData?.definition?.parts?.length || 0;
+                  addLog(`✅ Definition retrieved successfully (${partsCount} parts)`);
+                } else {
+                  const errorText = await resultResponse.text();
+                  console.log("❌ Failed to GET result:", errorText);
+                  throw new Error(`Failed to get definition result: ${resultResponse.status} ${resultResponse.statusText} - ${errorText}`);
+                }
+              } else {
+                // No Location header - check if result is embedded in the operation status
+                console.log("⚠️ No Location header found in poll response");
+                console.log("� Checking operation status for embedded result...");
+                
+                if (operationStatus.result) {
+                  console.log("✅ Result found in operation status.result");
+                  definitionData = operationStatus.result;
+                } else if (operationStatus.definition) {
+                  console.log("✅ Result found in operation status.definition");
+                  definitionData = operationStatus.definition;
+                } else {
+                  throw new Error(`Operation succeeded but no result location or embedded result found. Operation status: ${JSON.stringify(operationStatus)}`);
+                }
+              }
+              break;
+
+            } else if (operationStatus.status === 'Failed') {
+              throw new Error(`Operation failed: ${JSON.stringify(operationStatus.error || operationStatus)}`);
+            } else {
+              // Other status, continue polling
+              console.log(`⏳ Operation status: ${operationStatus.status}, continuing to poll...`);
+            }
+          } else if (!pollResponse.ok && pollResponse.status !== 202) {
+            // Error occurred
+            const errorText = await pollResponse.text();
+            throw new Error(`Operation failed: ${pollResponse.status} ${pollResponse.statusText} - ${errorText}`);
+          }
+          // If still 202, continue polling
+        }
+
+        if (!definitionData) {
+          throw new Error(`Operation timed out after ${attempts} attempts (${attempts * 2} seconds)`);
+        }
+
+      } else if (getDefResponse.status === 200) {
+        // Synchronous response (some items may return immediately)
+        console.log("✅ Received synchronous response");
+        definitionData = await getDefResponse.json();
+
+      } else {
+        // Unexpected status code
+        const errorText = await getDefResponse.text();
+        throw new Error(`Failed to get definition: ${getDefResponse.status} ${getDefResponse.statusText} - ${errorText}`);
+      }
+
+      console.log("📦 Definition retrieved:", definitionData);
+      console.log("📦 Definition parts count:", definitionData?.definition?.parts?.length || 0);
+
+      // Validate that we have a definition with parts (Core Items API format)
+      if (!definitionData || !definitionData.definition || !definitionData.definition.parts || definitionData.definition.parts.length === 0) {
+        throw new Error(`❌ This semantic model cannot be cloned via API.\n\nPossible reasons:\n• The model may be empty (no tables/data)\n• The model may be a Power BI Desktop model (not Fabric-native)\n• The model may use a legacy format that doesn't support API export\n\nAPI Response: ${JSON.stringify(definitionData)}\n\nSuggestion: Try creating a new Fabric-native semantic model or use the Fabric portal's built-in clone feature.`);
+      }
+
+      // Step 4: Create new semantic model WITH the definition included using Core Items API
+      addLog("🔨 Creating new semantic model with definition...");
+      console.log("Creating new semantic model with definition:", clonedName);
+      const createUrl = `${EnvironmentConstants.FabricApiBaseUrl}/v1/workspaces/${editorItem.workspaceId}/items`;
+      
+      const createResponse = await fetch(createUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + accessToken.token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          displayName: clonedName,
+          type: 'SemanticModel',
+          description: selectedSemanticModel.description || `Clone of ${selectedSemanticModel.displayName}`,
+          definition: definitionData.definition  // Include definition from source model
+        })
+      });
+
+      console.log("📡 Create response status:", createResponse.status, createResponse.statusText);
+      
+      let newSemanticModelId: string;
+
+      if (createResponse.status === 202) {
+        // Create is also asynchronous - poll for completion
+        const createOperationLocation = createResponse.headers.get('location') || createResponse.headers.get('x-ms-operation-location');
+        console.log("⏳ Create operation is asynchronous. Location header:", createOperationLocation);
+
+        if (!createOperationLocation) {
+          throw new Error("Received 202 Accepted for create but no operation location header was provided");
+        }
+
+        // Poll the create operation
+        addLog("⏳ Waiting for model creation to complete...");
+        console.log("⏳ Polling for create operation completion...");
+        let createAttempts = 0;
+        const maxCreateAttempts = 30;
+        let createResultData = null;
+
+        while (createAttempts < maxCreateAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          createAttempts++;
+          if (createAttempts % 5 === 0) {
+            addLog(`⏳ Still waiting... (${createAttempts * 2} seconds elapsed)`);
+          }
+
+          const createPollResponse = await fetch(createOperationLocation, {
+            method: 'GET',
+            headers: {
+              'Authorization': 'Bearer ' + accessToken.token
+            }
+          });
+
+          console.log(`🔍 Create poll attempt ${createAttempts}: Status ${createPollResponse.status}`);
+
+          if (createPollResponse.status === 200) {
+            const createOperationStatus = await createPollResponse.json();
+            console.log("✅ Create operation completed with status:", createOperationStatus);
+
+            if (createOperationStatus.status === 'Succeeded') {
+              // Get result from Location header
+              const createResultLocation = createPollResponse.headers.get('location');
+              
+              if (createResultLocation) {
+                console.log("📥 Fetching create result from Location header:", createResultLocation);
+                
+                const createResultResponse = await fetch(createResultLocation, {
+                  method: 'GET',
+                  headers: {
+                    'Authorization': 'Bearer ' + accessToken.token
+                  }
+                });
+
+                if (createResultResponse.ok) {
+                  createResultData = await createResultResponse.json();
+                  console.log("✅ Create result retrieved:", createResultData);
+                  addLog("✅ New semantic model created successfully!");
+                } else {
+                  const errorText = await createResultResponse.text();
+                  throw new Error(`Failed to get create result: ${createResultResponse.status} - ${errorText}`);
+                }
+              } else if (createOperationStatus.result) {
+                // Result embedded in operation status
+                createResultData = createOperationStatus.result;
+                console.log("✅ Create result found in operation status");
+              } else {
+                throw new Error(`Create operation succeeded but no result found: ${JSON.stringify(createOperationStatus)}`);
+              }
+              break;
+            } else if (createOperationStatus.status === 'Failed') {
+              throw new Error(`Create operation failed: ${JSON.stringify(createOperationStatus.error || createOperationStatus)}`);
+            }
+          } else if (!createPollResponse.ok && createPollResponse.status !== 202) {
+            const errorText = await createPollResponse.text();
+            throw new Error(`Create operation polling failed: ${createPollResponse.status} - ${errorText}`);
+          }
+        }
+
+        if (!createResultData) {
+          throw new Error(`Create operation timed out after ${createAttempts} attempts`);
+        }
+
+        // Extract the ID from the create result
+        newSemanticModelId = createResultData.id;
+        console.log("✅ New semantic model created successfully with ID:", newSemanticModelId);
+
+      } else if (createResponse.status === 200 || createResponse.status === 201) {
+        // Synchronous create response
+        const newSemanticModel = await createResponse.json();
+        console.log("📦 Create response body:", newSemanticModel);
+        
+        if (!newSemanticModel || !newSemanticModel.id) {
+          throw new Error(`Create response did not return a valid item: ${JSON.stringify(newSemanticModel)}`);
+        }
+        
+        newSemanticModelId = newSemanticModel.id;
+        console.log("✅ New semantic model created successfully with ID:", newSemanticModelId);
+
+      } else {
+        const errorText = await createResponse.text();
+        throw new Error(`Failed to create new semantic model: ${createResponse.status} ${createResponse.statusText} - ${errorText}`);
+      }
+
+      // Success! Record the operation
+      const operationEndTime = new Date();
+      const durationMs = operationEndTime.getTime() - operationStartTime.getTime();
+      const durationSeconds = (durationMs / 1000).toFixed(1);
+      
+      addLog(`🎉 Clone completed! New model ID: ${newSemanticModelId}`);
+      addLog(`⏱️ Finished at: ${operationEndTime.toLocaleString()}`);
+      addLog(`⏱️ Total duration: ${durationSeconds} seconds`);
+      addLog("💾 Saving operation history...");
+
+      // Capture logs before state updates
+      const finalLogs = [
+        ...cloneProgressLogs,
+        `${new Date().toLocaleTimeString()}: 🎉 Clone completed! New model ID: ${newSemanticModelId}`,
+        `${new Date().toLocaleTimeString()}: ⏱️ Finished at: ${operationEndTime.toLocaleString()}`,
+        `${new Date().toLocaleTimeString()}: ⏱️ Total duration: ${durationSeconds} seconds`,
+        `${new Date().toLocaleTimeString()}: 💾 Saving operation history...`
+      ];
+
+      const operation: WorkspaceOperation = {
+        id: operationId,
+        type: 'clone',
+        sourceItems: [selectedSemanticModel.id],
+        clonedItemId: newSemanticModelId,
+        clonedItemName: clonedName,
+        status: 'completed',
+        timestamp: new Date().toISOString(),
+        startTime: operationStartTime.toISOString(),
+        endTime: operationEndTime.toISOString(),
+        duration: durationMs,
+        logs: finalLogs // Save the complete logs with the operation
+      };
+
+      const updatedOperations = [...(editorItem.definition?.operations || []), operation];
+      const updatedDefinition = { ...editorItem.definition, operations: updatedOperations };
+      updateItemDefinition({ operations: updatedOperations });
+      
+      // Save the item definition
+      await saveItemDefinition(workloadClient, editorItem.id, updatedDefinition);
+      addLog("✅ Operation history saved");
+
+      addLog("🔄 Refreshing workspace items...");
+      // Refresh workspace items to show the new semantic model
+      await refreshWorkspaceItems();
+      
+      addLog("✅ Clone operation completed successfully!");
+      
+      // Close dialog after a brief delay to show final message
+      setTimeout(() => {
+        setShowCloneProgressDialog(false);
+      }, 2000);
+
+      callNotificationOpen(
+        workloadClient,
+        "Clone Successful",
+        `Semantic model "${selectedSemanticModel.displayName}" has been successfully cloned as "${clonedName}".`,
+        undefined,
+        undefined
+      );
+      
+    } catch (error: any) {
+      console.error("Clone operation failed:", error);
+      const operationEndTime = new Date();
+      const durationMs = operationEndTime.getTime() - operationStartTime.getTime();
+      const durationSeconds = (durationMs / 1000).toFixed(1);
+      
+      addLog(`❌ Error: ${error?.message || 'Unknown error'}`);
+      addLog(`⏱️ Failed after ${durationSeconds} seconds`);
+      addLog("💾 Saving failed operation to history...");
+      
+      // Capture logs before state updates
+      const finalLogs = [
+        ...cloneProgressLogs,
+        `${new Date().toLocaleTimeString()}: ❌ Error: ${error?.message || 'Unknown error'}`,
+        `${new Date().toLocaleTimeString()}: ⏱️ Failed after ${durationSeconds} seconds`,
+        `${new Date().toLocaleTimeString()}: 💾 Saving failed operation to history...`
+      ];
+      
+      // Record failed operation
+      const operation: WorkspaceOperation = {
+        id: operationId,
+        type: 'clone',
+        sourceItems: [selectedSemanticModel.id],
+        status: 'failed',
+        timestamp: new Date().toISOString(),
+        startTime: operationStartTime.toISOString(),
+        endTime: operationEndTime.toISOString(),
+        duration: durationMs,
+        errorMessage: error?.message || 'Unknown error',
+        logs: finalLogs // Save the complete logs even on failure for debugging
+      };
+
+      const updatedOperations = [...(editorItem.definition?.operations || []), operation];
+      const updatedDefinition = { ...editorItem.definition, operations: updatedOperations };
+      updateItemDefinition({ operations: updatedOperations });
+      
+      // Save the item definition
+      await saveItemDefinition(workloadClient, editorItem.id, updatedDefinition);
+      addLog("✅ Operation history saved");
+
+      // Keep dialog open on error so user can see logs
+      addLog("❌ Clone operation failed - see details above");
+
+      callNotificationOpen(
+        workloadClient,
+        "Clone Operation Failed",
+        error?.message || "Failed to clone semantic model.",
+        undefined,
+        undefined
+      );
+    }
+  }
+
   async function confirmRebindReport() {
     setShowRebindDialog(false);
     
@@ -433,7 +875,11 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
       };
 
       const updatedOperations = [...(editorItem.definition?.operations || []), operation];
+      const updatedDefinition = { ...editorItem.definition, operations: updatedOperations };
       updateItemDefinition({ operations: updatedOperations });
+      
+      // Save the item definition
+      await saveItemDefinition(workloadClient, editorItem.id, updatedDefinition);
 
       callNotificationOpen(
         workloadClient,
@@ -471,6 +917,11 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
     const updatedItems = workspaceItems.map(item => ({ ...item, selected: checked }));
     setWorkspaceItems(updatedItems);
     updateItemDefinition({ selectedItems: updatedItems });
+  }
+
+  function handleViewOperationLogs(operation: WorkspaceOperation) {
+    setSelectedOperation(operation);
+    setShowOperationLogsDialog(true);
   }
 
   async function loadDataFromUrl(pageContext: ContextProps, pathname: string): Promise<void> {
@@ -529,10 +980,11 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
   const selectedItemsCount = workspaceItems.filter(item => item.selected).length;
   const hasSelectedItems = selectedItemsCount > 0;
   const hasSelectedReport = workspaceItems.some(item => item.selected && item.type === 'Report');
+  const hasSelectedSemanticModel = workspaceItems.filter(item => item.selected && item.type === 'SemanticModel').length === 1;
 
   if (isLoadingData) {
     return (<ItemEditorLoadingProgressBar 
-      message={t("WorkspaceManagerItemEditor_LoadingProgressBar_Text")} />);
+      message="Loading Workspace Manager..." />);
   }
   else {
     return (
@@ -543,12 +995,14 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
             isSaveButtonEnabled={isUnsaved}
             hasSelectedItems={hasSelectedItems}
             hasSelectedReport={hasSelectedReport}
+            hasSelectedSemanticModel={hasSelectedSemanticModel}
             saveItemCallback={SaveItem}
             openSettingsCallback={openSettings}
             refreshWorkspaceCallback={refreshWorkspaceItems}
             bulkCopyCallback={handleBulkCopy}
             bulkDeleteCallback={handleBulkDelete}
             rebindReportCallback={handleRebindReport}
+            cloneSemanticModelCallback={handleCloneSemanticModel}
         />
         <Stack className="main">
           {selectedView === VIEW_TYPES.EMPTY && (
@@ -563,24 +1017,24 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
           )}
           {selectedView === VIEW_TYPES.ITEM_BROWSER && (
           <span>
-              <h2>{t('WorkspaceManagerItemEditor_Title')}</h2>
+              <h2>Workspace Manager</h2>
               
               {/* Workspace Information Section */}
               <div className="section" data-testid='workspace-manager-metadata'>
-                <Field label={t('Item_ID_Label')} orientation="horizontal" className="field">
+                <Field label="Item ID" orientation="horizontal" className="field">
                   <Label>{editorItem?.id}</Label>
                 </Field>
-                <Field label={t('Item_Type_Label')} orientation="horizontal" className="field">
+                <Field label="Item Type" orientation="horizontal" className="field">
                   <Label>{editorItem?.type}</Label>
                 </Field>
-                <Field label={t('Item_Name_Label')} orientation="horizontal" className="field">
+                <Field label="Item Name" orientation="horizontal" className="field">
                   <Label>{editorItem?.displayName}</Label>
                 </Field>
-                <Field label={t('Workspace_ID_Label')} orientation="horizontal" className="field">
+                <Field label="Workspace ID" orientation="horizontal" className="field">
                   <Label>{editorItem?.workspaceId}</Label>
                 </Field>
                 {editorItem?.definition?.lastSync && (
-                  <Field label={t('WorkspaceManagerItem_LastSync_Label')} orientation="horizontal" className="field">
+                  <Field label="Last Synced" orientation="horizontal" className="field">
                     <Label>{new Date(editorItem.definition.lastSync).toLocaleString()}</Label>
                   </Field>
                 )}
@@ -637,23 +1091,46 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
                   </Text>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {editorItem.definition.operations.slice(-5).reverse().map((operation) => (
-                      <Card key={operation.id}>
+                      <Card 
+                        key={operation.id}
+                        style={{ cursor: operation.logs ? 'pointer' : 'default' }}
+                        onClick={() => operation.logs && handleViewOperationLogs(operation)}
+                      >
                         <CardHeader
                           header={
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <Badge 
                                 appearance="filled" 
-                                color={operation.type === 'delete' ? 'danger' : 'success'}
+                                color={operation.status === 'failed' ? 'danger' : operation.type === 'delete' ? 'warning' : 'success'}
                               >
                                 {operation.type.toUpperCase()}
                               </Badge>
                               <Text weight="semibold">
-                                {operation.sourceItems.length} items
+                                {operation.sourceItems.length} item{operation.sourceItems.length !== 1 ? 's' : ''}
                               </Text>
+                              <Badge appearance="outline" color={operation.status === 'completed' ? 'success' : operation.status === 'failed' ? 'danger' : 'warning'}>
+                                {operation.status}
+                              </Badge>
                               <Text size={200} style={{ color: '#6b6b6b' }}>
                                 {new Date(operation.timestamp).toLocaleString()}
                               </Text>
+                              {operation.logs && (
+                                <Text size={200} style={{ color: '#0078d4', marginLeft: 'auto' }}>
+                                  📋 View logs
+                                </Text>
+                              )}
                             </div>
+                          }
+                          description={
+                            operation.errorMessage ? (
+                              <Text size={200} style={{ color: '#d13438' }}>
+                                {operation.errorMessage}
+                              </Text>
+                            ) : operation.clonedItemName ? (
+                              <Text size={200} style={{ color: '#6b6b6b' }}>
+                                Created: {operation.clonedItemName}
+                              </Text>
+                            ) : undefined
                           }
                         />
                       </Card>
@@ -737,6 +1214,156 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
                   disabled={!selectedDatasetId}
                 >
                   Rebind
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
+
+        {/* Clone Progress Dialog */}
+        <Dialog open={showCloneProgressDialog} modalType="non-modal">
+          <DialogSurface style={{ maxWidth: '600px', minWidth: '600px' }}>
+            <DialogBody>
+              <DialogTitle>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Spinner size="small" />
+                  <span>Cloning Semantic Model</span>
+                </div>
+              </DialogTitle>
+              <DialogContent>
+                <div style={{ 
+                  height: '400px',
+                  overflowY: 'auto', 
+                  fontFamily: 'monospace', 
+                  fontSize: '12px',
+                  backgroundColor: '#f5f5f5',
+                  padding: '12px',
+                  borderRadius: '4px',
+                  border: '1px solid #e0e0e0'
+                }}>
+                  {cloneProgressLogs.map((log, index) => (
+                    <div key={index} style={{ marginBottom: '4px' }}>
+                      {log}
+                    </div>
+                  ))}
+                  {cloneProgressLogs.length === 0 && (
+                    <Text>Initializing clone operation...</Text>
+                  )}
+                </div>
+                <div style={{ marginTop: '12px' }}>
+                  <Text size={200} style={{ color: '#6b6b6b' }}>
+                    This may take up to a minute depending on the size of the semantic model.
+                  </Text>
+                </div>
+              </DialogContent>
+              <DialogActions>
+                <Button 
+                  appearance="secondary" 
+                  onClick={() => setShowCloneProgressDialog(false)}
+                >
+                  Close
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
+
+        {/* Operation Logs Dialog */}
+        <Dialog open={showOperationLogsDialog} onOpenChange={(_, data) => setShowOperationLogsDialog(data.open)}>
+          <DialogSurface style={{ maxWidth: '700px', minWidth: '700px' }}>
+            <DialogBody>
+              <DialogTitle>
+                Operation Logs
+              </DialogTitle>
+              <DialogContent>
+                {selectedOperation && (
+                  <>
+                    <div style={{ marginBottom: '16px', padding: '16px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                        <Badge appearance="filled" color={selectedOperation.status === 'failed' ? 'danger' : 'success'}>
+                          {selectedOperation.type.toUpperCase()}
+                        </Badge>
+                        <Badge appearance="outline" color={selectedOperation.status === 'completed' ? 'success' : 'danger'}>
+                          {selectedOperation.status}
+                        </Badge>
+                      </div>
+                      
+                      {/* Operation ID */}
+                      <Text size={200} style={{ display: 'block', marginBottom: '8px', color: '#424242' }}>
+                        <strong>Operation ID:</strong> {selectedOperation.id}
+                      </Text>
+                      
+                      {/* Timing Information */}
+                      <div style={{ marginBottom: '8px' }}>
+                        {selectedOperation.startTime && (
+                          <Text size={200} style={{ display: 'block', marginBottom: '4px', color: '#424242' }}>
+                            <strong>Started:</strong> {new Date(selectedOperation.startTime).toLocaleString()}
+                          </Text>
+                        )}
+                        {selectedOperation.endTime && (
+                          <Text size={200} style={{ display: 'block', marginBottom: '4px', color: '#424242' }}>
+                            <strong>Finished:</strong> {new Date(selectedOperation.endTime).toLocaleString()}
+                          </Text>
+                        )}
+                        {selectedOperation.duration !== undefined && (
+                          <Text size={200} style={{ display: 'block', marginBottom: '4px', color: '#424242' }}>
+                            <strong>Duration:</strong> {(selectedOperation.duration / 1000).toFixed(1)} seconds
+                          </Text>
+                        )}
+                      </div>
+                      
+                      {/* User Information */}
+                      {selectedOperation.userName && (
+                        <Text size={200} style={{ display: 'block', marginBottom: '8px', color: '#424242' }}>
+                          <strong>Initiated by:</strong> {selectedOperation.userName}
+                        </Text>
+                      )}
+                      
+                      {/* Result Information */}
+                      {selectedOperation.clonedItemName && (
+                        <Text size={200} style={{ color: '#107c10', display: 'block', marginTop: '8px' }}>
+                          ✅ <strong>Created:</strong> {selectedOperation.clonedItemName}
+                        </Text>
+                      )}
+                      {selectedOperation.errorMessage && (
+                        <Text size={200} style={{ color: '#d13438', display: 'block', marginTop: '8px' }}>
+                          ❌ <strong>Error:</strong> {selectedOperation.errorMessage}
+                        </Text>
+                      )}
+                    </div>
+                    
+                    <div style={{ 
+                      height: '400px',
+                      overflowY: 'auto', 
+                      fontFamily: 'monospace', 
+                      fontSize: '12px',
+                      backgroundColor: '#f5f5f5',
+                      padding: '12px',
+                      borderRadius: '4px',
+                      border: '1px solid #e0e0e0'
+                    }}>
+                      {selectedOperation.logs && selectedOperation.logs.length > 0 ? (
+                        selectedOperation.logs.map((log, index) => (
+                          <div key={index} style={{ marginBottom: '4px' }}>
+                            {log}
+                          </div>
+                        ))
+                      ) : (
+                        <Text style={{ color: '#6b6b6b' }}>No logs available for this operation.</Text>
+                      )}
+                    </div>
+                  </>
+                )}
+              </DialogContent>
+              <DialogActions>
+                <Button 
+                  appearance="secondary" 
+                  onClick={() => {
+                    setShowOperationLogsDialog(false);
+                    setSelectedOperation(null);
+                  }}
+                >
+                  Close
                 </Button>
               </DialogActions>
             </DialogBody>

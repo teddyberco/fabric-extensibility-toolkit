@@ -2,7 +2,6 @@ import React from "react";
 import { Stack } from "@fluentui/react";
 import { Text, Button, Card, CardHeader } from "@fluentui/react-components";
 import "../../styles.scss";
-import { useTranslation } from "react-i18next";
 import { WorkloadClientAPI } from "@ms-fabric/workload-client";
 import { ItemWithDefinition } from "../../controller/ItemCRUDController";
 import { WorkspaceManagerItemDefinition } from "./WorkspaceManagerItemModel";
@@ -20,7 +19,6 @@ export const WorkspaceManagerItemEmpty: React.FC<WorkspaceManagerItemEmptyStateP
   itemDefinition: definition,
   onFinishEmpty: onFinishEmpty
 }) => {
-  const { t } = useTranslation();
   
   const initializeWorkspaceManager = () => {
     const initialDefinition: WorkspaceManagerItemDefinition = {
@@ -48,7 +46,7 @@ export const WorkspaceManagerItemEmpty: React.FC<WorkspaceManagerItemEmptyStateP
       </Stack.Item>
       <Stack.Item style={{ marginTop: '16px', marginBottom: '24px' }}>
         <Text>
-          {t('WorkspaceManagerItemEditorEmpty_Message', {itemName: item.displayName})}
+          Welcome to {item.displayName}! This item helps you manage multiple workspace items efficiently.
         </Text>
       </Stack.Item>
       <Stack.Item style={{ marginTop: '16px', marginBottom: '16px' }}>
@@ -77,7 +75,7 @@ export const WorkspaceManagerItemEmpty: React.FC<WorkspaceManagerItemEmptyStateP
       </Stack.Item>
       <Stack.Item style={{ marginTop: '24px' }}>
         <Button appearance="primary" onClick={initializeWorkspaceManager}>
-          {t('WorkspaceManagerItemEditorEmpty_Button')}
+          Get Started
         </Button>
       </Stack.Item>
     </Stack>

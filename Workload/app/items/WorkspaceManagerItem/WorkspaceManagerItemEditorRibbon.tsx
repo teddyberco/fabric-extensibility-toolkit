@@ -10,11 +10,11 @@ import {
   Copy24Regular,
   Delete24Regular,
   ArrowSync24Regular,
-  Link24Regular
+  Link24Regular,
+  DocumentCopy24Regular
 } from "@fluentui/react-icons";
 import { PageProps } from '../../App';
 import '../../styles.scss';
-import { t } from "i18next";
 
 const WorkspaceManagerItemEditorRibbonHomeTabToolbar = (props: WorkspaceManagerItemEditorRibbonProps) => {
 
@@ -56,42 +56,49 @@ const WorkspaceManagerItemEditorRibbonHomeTabToolbar = (props: WorkspaceManagerI
     return;
   }
 
+  async function onCloneSemanticModelClicked() {
+    if (props.cloneSemanticModelCallback) {
+      await props.cloneSemanticModelCallback();
+    }
+    return;
+  }
+
   return (
     <Toolbar>
       <Tooltip
-        content={t("ItemEditor_Ribbon_Save_Label")}
+        content="Save"
         relationship="label">
         <ToolbarButton
           disabled={!props.isSaveButtonEnabled}
-          aria-label={t("ItemEditor_Ribbon_Save_Label")}
+          aria-label="Save"
           data-testid="workspace-manager-item-editor-save-btn"
           icon={<Save24Regular />}
           onClick={onSaveClicked} />
       </Tooltip>
       <Tooltip
-        content={t("WorkspaceManagerItem_Ribbon_Refresh_Label")}
+        content="Refresh Items"
         relationship="label">
         <ToolbarButton
-          aria-label={t("WorkspaceManagerItem_Ribbon_Refresh_Label")}
+          aria-label="Refresh Items"
           data-testid="workspace-manager-item-editor-refresh-btn"
           icon={<ArrowSync24Regular />}
           onClick={onRefreshClicked} />
       </Tooltip>
       <Tooltip
-        content={t("WorkspaceManagerItem_Ribbon_BulkCopy_Label")}
+        content="Bulk Copy"
         relationship="label">
         <ToolbarButton
-          aria-label={t("WorkspaceManagerItem_Ribbon_BulkCopy_Label")}
+          aria-label="Bulk Copy"
           data-testid="workspace-manager-item-editor-bulk-copy-btn"
           icon={<Copy24Regular />}
           onClick={onBulkCopyClicked}
           disabled={!props.hasSelectedItems} />
       </Tooltip>
       <Tooltip
-        content={t("WorkspaceManagerItem_Ribbon_BulkDelete_Label")}
+        content="Bulk Delete"
         relationship="label">
         <ToolbarButton
-          aria-label={t("WorkspaceManagerItem_Ribbon_BulkDelete_Label")}
+          aria-label="Bulk Delete"
           data-testid="workspace-manager-item-editor-bulk-delete-btn"
           icon={<Delete24Regular />}
           onClick={onBulkDeleteClicked}
@@ -108,10 +115,20 @@ const WorkspaceManagerItemEditorRibbonHomeTabToolbar = (props: WorkspaceManagerI
           disabled={!props.hasSelectedReport} />
       </Tooltip>
       <Tooltip
-        content={t("ItemEditor_Ribbon_Settings_Label")}
+        content="Clone Semantic Model"
         relationship="label">
         <ToolbarButton
-          aria-label={t("ItemEditor_Ribbon_Settings_Label")}
+          aria-label="Clone Semantic Model"
+          data-testid="workspace-manager-item-editor-clone-semantic-model-btn"
+          icon={<DocumentCopy24Regular />}
+          onClick={onCloneSemanticModelClicked}
+          disabled={!props.hasSelectedSemanticModel} />
+      </Tooltip>
+      <Tooltip
+        content="Settings"
+        relationship="label">
+        <ToolbarButton
+          aria-label="Settings"
           data-testid="workspace-manager-item-editor-settings-btn"
           icon={<Settings24Regular />}
           onClick={onSettingsClicked} />
@@ -125,12 +142,14 @@ export interface WorkspaceManagerItemEditorRibbonProps extends PageProps {
   isSaveButtonEnabled?: boolean;
   hasSelectedItems?: boolean;
   hasSelectedReport?: boolean;
+  hasSelectedSemanticModel?: boolean;
   saveItemCallback: () => Promise<void>;
   openSettingsCallback: () => Promise<void>;
   refreshWorkspaceCallback?: () => Promise<void>;
   bulkCopyCallback?: () => Promise<void>;
   bulkDeleteCallback?: () => Promise<void>;
   rebindReportCallback?: () => Promise<void>;
+  cloneSemanticModelCallback?: () => Promise<void>;
 }
 
 export function WorkspaceManagerItemEditorRibbon(props: WorkspaceManagerItemEditorRibbonProps) {
@@ -139,7 +158,7 @@ export function WorkspaceManagerItemEditorRibbon(props: WorkspaceManagerItemEdit
     <div className="ribbon">
       <TabList disabled={isRibbonDisabled}>
         <Tab value="home" data-testid="home-tab-btn">
-          {t("ItemEditor_Ribbon_Home_Label")}
+          Home
         </Tab>
       </TabList>
       <div className="toolbarContainer">

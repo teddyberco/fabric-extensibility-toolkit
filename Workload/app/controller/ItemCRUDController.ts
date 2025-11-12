@@ -248,11 +248,21 @@ export function convertGetItemResultToWorkloadItem<T>(
 export function buildPublicAPIPayloadWithParts(
     parts: { payloadPath: string, payloadData: any }[]
 ): UpdateItemDefinitionPayload {
-    const itemDefinitionParts: ItemDefinitionPart[] = parts.map(({ payloadPath, payloadData }) => ({
-        path: payloadPath,
-        payload: btoa(JSON.stringify(payloadData)),
-        payloadType: PayloadType.InlineBase64
-    }));
+    const itemDefinitionParts: ItemDefinitionPart[] = parts.map(({ payloadPath, payloadData }) => {
+        // Convert to JSON string
+        const jsonString = JSON.stringify(payloadData);
+        
+        // Use Unicode-safe Base64 encoding
+        // First encode to UTF-8, then to Base64
+        const utf8Bytes = new TextEncoder().encode(jsonString);
+        const base64String = btoa(String.fromCharCode(...utf8Bytes));
+        
+        return {
+            path: payloadPath,
+            payload: base64String,
+            payloadType: PayloadType.InlineBase64
+        };
+    });
     return {
         definition: {
             format: undefined,

@@ -16,13 +16,20 @@ export interface WorkspaceItem {
 
 export interface WorkspaceOperation {
   id: string;
-  type: 'copy' | 'delete' | 'move' | 'rebind';
+  type: 'copy' | 'delete' | 'move' | 'rebind' | 'clone';
   sourceItems: string[];
   targetWorkspace?: string;
   targetDatasetId?: string; // For rebind operations
+  clonedItemId?: string; // For clone operations - the new item ID
+  clonedItemName?: string; // For clone operations - the new item name
   status: 'pending' | 'in-progress' | 'completed' | 'failed';
-  timestamp: string;
+  timestamp: string; // When the operation was created
+  startTime?: string; // When the operation actually started
+  endTime?: string; // When the operation finished
+  duration?: number; // Duration in milliseconds
+  userName?: string; // User who initiated the operation
   errorMessage?: string;
+  logs?: string[]; // Operation logs for debugging and history
 }
 
 export const VIEW_TYPES = {
