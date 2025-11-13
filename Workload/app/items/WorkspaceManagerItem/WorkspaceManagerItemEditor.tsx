@@ -415,22 +415,22 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
     };
 
     try {
-      addLog("🚀 Starting semantic model clone operation...");
-      addLog(`📋 Operation ID: ${operationId}`);
-      addLog(`📋 Started at: ${operationStartTime.toLocaleString()}`);
-      addLog(`📋 Source: ${selectedSemanticModel.displayName}`);
-      addLog(`📋 Target: ${clonedName}`);
+      addLog("[START] Starting semantic model clone operation...");
+      addLog(`[INFO] Operation ID: ${operationId}`);
+      addLog(`[INFO] Started at: ${operationStartTime.toLocaleString()}`);
+      addLog(`[INFO] Source: ${selectedSemanticModel.displayName}`);
+      addLog(`[INFO] Target: ${clonedName}`);
 
       // Step 1: Get token with Item.ReadWrite.All scope
       const scopes = "https://api.fabric.microsoft.com/Item.ReadWrite.All";
-      addLog("🔐 Acquiring authentication token...");
+      addLog("[AUTH] Acquiring authentication token...");
       console.log("Requesting token for clone operation:", scopes);
       const accessToken = await callAcquireFrontendAccessToken(workloadClient, scopes);
       console.log("Token acquired successfully");
-      addLog("✅ Authentication successful");
+      addLog("[SUCCESS] Authentication successful");
 
       // Step 2: Get the source semantic model metadata to understand what we're cloning
-      addLog("📊 Fetching source model metadata...");
+      addLog("[INFO] Fetching source model metadata...");
       console.log("Getting item metadata for semantic model:", selectedSemanticModel.id);
       const getItemUrl = `${EnvironmentConstants.FabricApiBaseUrl}/v1/workspaces/${editorItem.workspaceId}/items/${selectedSemanticModel.id}`;
       
@@ -447,18 +447,18 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
       }
 
       const itemMetadata = await getItemResponse.json();
-      console.log("📊 Semantic model metadata:", {
+      console.log("[INFO] Semantic model metadata:", {
         id: itemMetadata.id,
         displayName: itemMetadata.displayName,
         type: itemMetadata.type,
         description: itemMetadata.description,
         workspaceId: itemMetadata.workspaceId
       });
-      addLog("✅ Source model metadata retrieved");
+      addLog("[SUCCESS] Source model metadata retrieved");
 
       // Step 3: Get the source semantic model definition using Core Items API (asynchronous operation)
-      addLog("📥 Requesting model definition (this may take a few seconds)...");
-      console.log("🔄 Starting asynchronous getDefinition for semantic model:", selectedSemanticModel.id);
+      addLog("[INFO] Requesting model definition (this may take a few seconds)...");
+      console.log("[INFO] Starting asynchronous getDefinition for semantic model:", selectedSemanticModel.id);
       const getDefUrl = `${EnvironmentConstants.FabricApiBaseUrl}/v1/workspaces/${editorItem.workspaceId}/items/${selectedSemanticModel.id}/getDefinition`;
       
       const getDefResponse = await fetch(getDefUrl, {
@@ -468,22 +468,22 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
         }
       });
 
-      console.log("📡 getDefinition response status:", getDefResponse.status, getDefResponse.statusText);
+      console.log("[API] getDefinition response status:", getDefResponse.status, getDefResponse.statusText);
 
       let definitionData = null;
 
       // 202 Accepted means the operation is asynchronous - need to poll for completion
       if (getDefResponse.status === 202) {
         const operationLocation = getDefResponse.headers.get('location') || getDefResponse.headers.get('x-ms-operation-location');
-        console.log("⏳ Operation is asynchronous. Location header:", operationLocation);
+        console.log("[ASYNC] Operation is asynchronous. Location header:", operationLocation);
 
         if (!operationLocation) {
           throw new Error("Received 202 Accepted but no operation location header was provided");
         }
 
         // Poll the operation until it completes
-        addLog("⏳ Waiting for definition extraction to complete...");
-        console.log("⏳ Polling for operation completion...");
+        addLog("[WAIT] Waiting for definition extraction to complete...");
+        console.log("[POLL] Polling for operation completion...");
         let attempts = 0;
         const maxAttempts = 30; // 30 attempts with 2s delay = 1 minute max
 
@@ -498,12 +498,12 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
             }
           });
 
-          console.log(`🔍 Poll attempt ${attempts}: Status ${pollResponse.status}`);
+          console.log(`[POLL] Poll attempt ${attempts}: Status ${pollResponse.status}`);
 
           if (pollResponse.status === 200) {
             // Operation completed - check the status
             const operationStatus = await pollResponse.json();
-            console.log("✅ Operation completed with status:", operationStatus);
+            console.log("[SUCCESS] Operation completed with status:", operationStatus);
 
             // Check if operation succeeded
             if (operationStatus.status === 'Succeeded') {
@@ -521,29 +521,29 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
                   }
                 });
 
-                console.log(`📡 GET result response status:`, resultResponse.status);
+                console.log(`[API] GET result response status:`, resultResponse.status);
 
                 if (resultResponse.ok) {
                   definitionData = await resultResponse.json();
-                  console.log("✅ Definition result retrieved successfully");
-                  console.log("📦 Definition structure:", definitionData);
+                  console.log("[SUCCESS] Definition result retrieved successfully");
+                  console.log("[INFO] Definition structure:", definitionData);
                   const partsCount = definitionData?.definition?.parts?.length || 0;
-                  addLog(`✅ Definition retrieved successfully (${partsCount} parts)`);
+                  addLog(`[SUCCESS] Definition retrieved successfully (${partsCount} parts)`);
                 } else {
                   const errorText = await resultResponse.text();
-                  console.log("❌ Failed to GET result:", errorText);
+                  console.log("[ERROR] Failed to GET result:", errorText);
                   throw new Error(`Failed to get definition result: ${resultResponse.status} ${resultResponse.statusText} - ${errorText}`);
                 }
               } else {
                 // No Location header - check if result is embedded in the operation status
-                console.log("⚠️ No Location header found in poll response");
+                console.log("[WARN] No Location header found in poll response");
                 console.log("� Checking operation status for embedded result...");
                 
                 if (operationStatus.result) {
-                  console.log("✅ Result found in operation status.result");
+                  console.log("[SUCCESS] Result found in operation status.result");
                   definitionData = operationStatus.result;
                 } else if (operationStatus.definition) {
-                  console.log("✅ Result found in operation status.definition");
+                  console.log("[SUCCESS] Result found in operation status.definition");
                   definitionData = operationStatus.definition;
                 } else {
                   throw new Error(`Operation succeeded but no result location or embedded result found. Operation status: ${JSON.stringify(operationStatus)}`);
@@ -555,7 +555,7 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
               throw new Error(`Operation failed: ${JSON.stringify(operationStatus.error || operationStatus)}`);
             } else {
               // Other status, continue polling
-              console.log(`⏳ Operation status: ${operationStatus.status}, continuing to poll...`);
+              console.log(`[WAIT] Operation status: ${operationStatus.status}, continuing to poll...`);
             }
           } else if (!pollResponse.ok && pollResponse.status !== 202) {
             // Error occurred
@@ -571,7 +571,7 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
 
       } else if (getDefResponse.status === 200) {
         // Synchronous response (some items may return immediately)
-        console.log("✅ Received synchronous response");
+        console.log("[SUCCESS] Received synchronous response");
         definitionData = await getDefResponse.json();
 
       } else {
@@ -580,16 +580,16 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
         throw new Error(`Failed to get definition: ${getDefResponse.status} ${getDefResponse.statusText} - ${errorText}`);
       }
 
-      console.log("📦 Definition retrieved:", definitionData);
-      console.log("📦 Definition parts count:", definitionData?.definition?.parts?.length || 0);
+      console.log("[INFO] Definition retrieved:", definitionData);
+      console.log("[INFO] Definition parts count:", definitionData?.definition?.parts?.length || 0);
 
       // Validate that we have a definition with parts (Core Items API format)
       if (!definitionData || !definitionData.definition || !definitionData.definition.parts || definitionData.definition.parts.length === 0) {
-        throw new Error(`❌ This semantic model cannot be cloned via API.\n\nPossible reasons:\n• The model may be empty (no tables/data)\n• The model may be a Power BI Desktop model (not Fabric-native)\n• The model may use a legacy format that doesn't support API export\n\nAPI Response: ${JSON.stringify(definitionData)}\n\nSuggestion: Try creating a new Fabric-native semantic model or use the Fabric portal's built-in clone feature.`);
+        throw new Error(`[ERROR] This semantic model cannot be cloned via API.\n\nPossible reasons:\n• The model may be empty (no tables/data)\n• The model may be a Power BI Desktop model (not Fabric-native)\n• The model may use a legacy format that doesn't support API export\n\nAPI Response: ${JSON.stringify(definitionData)}\n\nSuggestion: Try creating a new Fabric-native semantic model or use the Fabric portal's built-in clone feature.`);
       }
 
       // Step 4: Create new semantic model WITH the definition included using Core Items API
-      addLog("🔨 Creating new semantic model with definition...");
+      addLog("[CREATE] Creating new semantic model with definition...");
       console.log("Creating new semantic model with definition:", clonedName);
       const createUrl = `${EnvironmentConstants.FabricApiBaseUrl}/v1/workspaces/${editorItem.workspaceId}/items`;
       
@@ -607,22 +607,22 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
         })
       });
 
-      console.log("📡 Create response status:", createResponse.status, createResponse.statusText);
+      console.log("[API] Create response status:", createResponse.status, createResponse.statusText);
       
       let newSemanticModelId: string;
 
       if (createResponse.status === 202) {
         // Create is also asynchronous - poll for completion
         const createOperationLocation = createResponse.headers.get('location') || createResponse.headers.get('x-ms-operation-location');
-        console.log("⏳ Create operation is asynchronous. Location header:", createOperationLocation);
+        console.log("[WAIT] Create operation is asynchronous. Location header:", createOperationLocation);
 
         if (!createOperationLocation) {
           throw new Error("Received 202 Accepted for create but no operation location header was provided");
         }
 
         // Poll the create operation
-        addLog("⏳ Waiting for model creation to complete...");
-        console.log("⏳ Polling for create operation completion...");
+        addLog("[WAIT] Waiting for model creation to complete...");
+        console.log("[WAIT] Polling for create operation completion...");
         let createAttempts = 0;
         const maxCreateAttempts = 30;
         let createResultData = null;
@@ -631,7 +631,7 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
           await new Promise(resolve => setTimeout(resolve, 2000));
           createAttempts++;
           if (createAttempts % 5 === 0) {
-            addLog(`⏳ Still waiting... (${createAttempts * 2} seconds elapsed)`);
+            addLog(`[WAIT] Still waiting... (${createAttempts * 2} seconds elapsed)`);
           }
 
           const createPollResponse = await fetch(createOperationLocation, {
@@ -641,18 +641,18 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
             }
           });
 
-          console.log(`🔍 Create poll attempt ${createAttempts}: Status ${createPollResponse.status}`);
+          console.log(`[POLL] Create poll attempt ${createAttempts}: Status ${createPollResponse.status}`);
 
           if (createPollResponse.status === 200) {
             const createOperationStatus = await createPollResponse.json();
-            console.log("✅ Create operation completed with status:", createOperationStatus);
+            console.log("[SUCCESS] Create operation completed with status:", createOperationStatus);
 
             if (createOperationStatus.status === 'Succeeded') {
               // Get result from Location header
               const createResultLocation = createPollResponse.headers.get('location');
               
               if (createResultLocation) {
-                console.log("📥 Fetching create result from Location header:", createResultLocation);
+                console.log("[FETCH] Fetching create result from Location header:", createResultLocation);
                 
                 const createResultResponse = await fetch(createResultLocation, {
                   method: 'GET',
@@ -663,8 +663,8 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
 
                 if (createResultResponse.ok) {
                   createResultData = await createResultResponse.json();
-                  console.log("✅ Create result retrieved:", createResultData);
-                  addLog("✅ New semantic model created successfully!");
+                  console.log("[SUCCESS] Create result retrieved:", createResultData);
+                  addLog("[SUCCESS] New semantic model created successfully!");
                 } else {
                   const errorText = await createResultResponse.text();
                   throw new Error(`Failed to get create result: ${createResultResponse.status} - ${errorText}`);
@@ -672,7 +672,7 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
               } else if (createOperationStatus.result) {
                 // Result embedded in operation status
                 createResultData = createOperationStatus.result;
-                console.log("✅ Create result found in operation status");
+                console.log("[SUCCESS] Create result found in operation status");
               } else {
                 throw new Error(`Create operation succeeded but no result found: ${JSON.stringify(createOperationStatus)}`);
               }
@@ -692,19 +692,19 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
 
         // Extract the ID from the create result
         newSemanticModelId = createResultData.id;
-        console.log("✅ New semantic model created successfully with ID:", newSemanticModelId);
+        console.log("[SUCCESS] New semantic model created successfully with ID:", newSemanticModelId);
 
       } else if (createResponse.status === 200 || createResponse.status === 201) {
         // Synchronous create response
         const newSemanticModel = await createResponse.json();
-        console.log("📦 Create response body:", newSemanticModel);
+        console.log("[INFO] Create response body:", newSemanticModel);
         
         if (!newSemanticModel || !newSemanticModel.id) {
           throw new Error(`Create response did not return a valid item: ${JSON.stringify(newSemanticModel)}`);
         }
         
         newSemanticModelId = newSemanticModel.id;
-        console.log("✅ New semantic model created successfully with ID:", newSemanticModelId);
+        console.log("[SUCCESS] New semantic model created successfully with ID:", newSemanticModelId);
 
       } else {
         const errorText = await createResponse.text();
@@ -716,18 +716,18 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
       const durationMs = operationEndTime.getTime() - operationStartTime.getTime();
       const durationSeconds = (durationMs / 1000).toFixed(1);
       
-      addLog(`🎉 Clone completed! New model ID: ${newSemanticModelId}`);
-      addLog(`⏱️ Finished at: ${operationEndTime.toLocaleString()}`);
-      addLog(`⏱️ Total duration: ${durationSeconds} seconds`);
-      addLog("💾 Saving operation history...");
+      addLog(`[SUCCESS] Clone completed! New model ID: ${newSemanticModelId}`);
+      addLog(`[TIME] Finished at: ${operationEndTime.toLocaleString()}`);
+      addLog(`[TIME] Total duration: ${durationSeconds} seconds`);
+      addLog("[SAVE] Saving operation history...");
 
       // Capture logs before state updates
       const finalLogs = [
         ...cloneProgressLogs,
-        `${new Date().toLocaleTimeString()}: 🎉 Clone completed! New model ID: ${newSemanticModelId}`,
-        `${new Date().toLocaleTimeString()}: ⏱️ Finished at: ${operationEndTime.toLocaleString()}`,
-        `${new Date().toLocaleTimeString()}: ⏱️ Total duration: ${durationSeconds} seconds`,
-        `${new Date().toLocaleTimeString()}: 💾 Saving operation history...`
+        `${new Date().toLocaleTimeString()}: [SUCCESS] Clone completed! New model ID: ${newSemanticModelId}`,
+        `${new Date().toLocaleTimeString()}: [TIME] Finished at: ${operationEndTime.toLocaleString()}`,
+        `${new Date().toLocaleTimeString()}: [TIME] Total duration: ${durationSeconds} seconds`,
+        `${new Date().toLocaleTimeString()}: [SAVE] Saving operation history...`
       ];
 
       const operation: WorkspaceOperation = {
@@ -750,13 +750,13 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
       
       // Save the item definition
       await saveItemDefinition(workloadClient, editorItem.id, updatedDefinition);
-      addLog("✅ Operation history saved");
+      addLog("[SUCCESS] Operation history saved");
 
-      addLog("🔄 Refreshing workspace items...");
+      addLog("[INFO] Refreshing workspace items...");
       // Refresh workspace items to show the new semantic model
       await refreshWorkspaceItems();
       
-      addLog("✅ Clone operation completed successfully!");
+      addLog("[SUCCESS] Clone operation completed successfully!");
       
       // Close dialog after a brief delay to show final message
       setTimeout(() => {
@@ -777,16 +777,16 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
       const durationMs = operationEndTime.getTime() - operationStartTime.getTime();
       const durationSeconds = (durationMs / 1000).toFixed(1);
       
-      addLog(`❌ Error: ${error?.message || 'Unknown error'}`);
-      addLog(`⏱️ Failed after ${durationSeconds} seconds`);
-      addLog("💾 Saving failed operation to history...");
+      addLog(`[ERROR] Error: ${error?.message || 'Unknown error'}`);
+      addLog(`[TIME] Failed after ${durationSeconds} seconds`);
+      addLog("[SAVE] Saving failed operation to history...");
       
       // Capture logs before state updates
       const finalLogs = [
         ...cloneProgressLogs,
-        `${new Date().toLocaleTimeString()}: ❌ Error: ${error?.message || 'Unknown error'}`,
-        `${new Date().toLocaleTimeString()}: ⏱️ Failed after ${durationSeconds} seconds`,
-        `${new Date().toLocaleTimeString()}: 💾 Saving failed operation to history...`
+        `${new Date().toLocaleTimeString()}: [ERROR] Error: ${error?.message || 'Unknown error'}`,
+        `${new Date().toLocaleTimeString()}: [TIME] Failed after ${durationSeconds} seconds`,
+        `${new Date().toLocaleTimeString()}: [SAVE] Saving failed operation to history...`
       ];
       
       // Record failed operation
@@ -809,10 +809,10 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
       
       // Save the item definition
       await saveItemDefinition(workloadClient, editorItem.id, updatedDefinition);
-      addLog("✅ Operation history saved");
+      addLog("[SUCCESS] Operation history saved");
 
       // Keep dialog open on error so user can see logs
-      addLog("❌ Clone operation failed - see details above");
+      addLog("[ERROR] Clone operation failed - see details above");
 
       callNotificationOpen(
         workloadClient,
@@ -838,15 +838,30 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
       return;
     }
 
+    const operationId = `op-${Date.now()}`;
+    const operationStartTime = new Date();
+    const operationLogs: string[] = [];
+    
+    // Helper to add log entries
+    const addLog = (message: string) => {
+      const logEntry = `${new Date().toLocaleTimeString()}: ${message}`;
+      operationLogs.push(logEntry);
+      console.log(logEntry);
+    };
+
     try {
+      addLog(`[INFO] Starting rebind operation for report "${reportToRebind.displayName}"`);
+      addLog(`[INFO] Target Semantic Model ID: ${selectedDatasetId}`);
+      
       // Request token with Report.ReadWrite.All scope
       const scopes = "https://api.fabric.microsoft.com/Report.ReadWrite.All";
-      console.log("Requesting token for rebind scope:", scopes);
+      addLog("[AUTH] Requesting authentication token...");
       const accessToken = await callAcquireFrontendAccessToken(workloadClient, scopes);
-      console.log("Token acquired successfully for rebind");
+      addLog("[SUCCESS] Token acquired successfully");
 
       // Call Power BI REST API to rebind report
       const apiUrl = `https://api.powerbi.com/v1.0/myorg/groups/${editorItem.workspaceId}/reports/${reportToRebind.id}/Rebind`;
+      addLog(`[API] Calling Power BI API to rebind report...`);
       
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -864,14 +879,28 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
         throw new Error(`Rebind failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
-      // Record the operation
+      // Success! Record the operation
+      const operationEndTime = new Date();
+      const durationMs = operationEndTime.getTime() - operationStartTime.getTime();
+      const durationSeconds = (durationMs / 1000).toFixed(1);
+      
+      addLog(`[SUCCESS] Rebind completed successfully!`);
+      addLog(`[TIME] Finished at: ${operationEndTime.toLocaleString()}`);
+      addLog(`[TIME] Total duration: ${durationSeconds} seconds`);
+      addLog("[SAVE] Saving operation history...");
+
+      // Record the operation with logs
       const operation: WorkspaceOperation = {
-        id: `op-${Date.now()}`,
+        id: operationId,
         type: 'rebind',
         sourceItems: [reportToRebind.id],
         targetDatasetId: selectedDatasetId,
         status: 'completed',
-        timestamp: new Date().toISOString()
+        timestamp: operationStartTime.toISOString(),
+        startTime: operationStartTime.toISOString(),
+        endTime: operationEndTime.toISOString(),
+        duration: durationMs,
+        logs: operationLogs
       };
 
       const updatedOperations = [...(editorItem.definition?.operations || []), operation];
@@ -880,6 +909,7 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
       
       // Save the item definition
       await saveItemDefinition(workloadClient, editorItem.id, updatedDefinition);
+      addLog("[SUCCESS] Operation history saved");
 
       callNotificationOpen(
         workloadClient,
@@ -895,6 +925,37 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
       
     } catch (error: any) {
       console.error("Rebind operation failed:", error);
+      const operationEndTime = new Date();
+      const durationMs = operationEndTime.getTime() - operationStartTime.getTime();
+      const durationSeconds = (durationMs / 1000).toFixed(1);
+      
+      addLog(`[ERROR] Error: ${error?.message || 'Unknown error'}`);
+      addLog(`[TIME] Failed after ${durationSeconds} seconds`);
+      addLog("[SAVE] Saving failed operation to history...");
+      
+      // Record failed operation with logs
+      const operation: WorkspaceOperation = {
+        id: operationId,
+        type: 'rebind',
+        sourceItems: [reportToRebind.id],
+        targetDatasetId: selectedDatasetId,
+        status: 'failed',
+        timestamp: operationStartTime.toISOString(),
+        startTime: operationStartTime.toISOString(),
+        endTime: operationEndTime.toISOString(),
+        duration: durationMs,
+        errorMessage: error?.message || 'Unknown error',
+        logs: operationLogs
+      };
+
+      const updatedOperations = [...(editorItem.definition?.operations || []), operation];
+      const updatedDefinition = { ...editorItem.definition, operations: updatedOperations };
+      updateItemDefinition({ operations: updatedOperations });
+      
+      // Save the item definition
+      await saveItemDefinition(workloadClient, editorItem.id, updatedDefinition);
+      addLog("[SUCCESS] Failed operation history saved");
+      
       callNotificationOpen(
         workloadClient,
         "Rebind Operation Failed",
@@ -1116,7 +1177,7 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
                               </Text>
                               {operation.logs && (
                                 <Text size={200} style={{ color: '#0078d4', marginLeft: 'auto' }}>
-                                  📋 View logs
+                                  [INFO] View logs
                                 </Text>
                               )}
                             </div>
@@ -1322,12 +1383,12 @@ export function WorkspaceManagerItemEditor(props: PageProps) {
                       {/* Result Information */}
                       {selectedOperation.clonedItemName && (
                         <Text size={200} style={{ color: '#107c10', display: 'block', marginTop: '8px' }}>
-                          ✅ <strong>Created:</strong> {selectedOperation.clonedItemName}
+                          [SUCCESS] <strong>Created:</strong> {selectedOperation.clonedItemName}
                         </Text>
                       )}
                       {selectedOperation.errorMessage && (
                         <Text size={200} style={{ color: '#d13438', display: 'block', marginTop: '8px' }}>
-                          ❌ <strong>Error:</strong> {selectedOperation.errorMessage}
+                          [ERROR] <strong>Error:</strong> {selectedOperation.errorMessage}
                         </Text>
                       )}
                     </div>
